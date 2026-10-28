@@ -177,7 +177,24 @@ export function closeLifecycleSubpage() {
   }, 150);
 }
 
+export function openSettingsSectionMobile() {
+  const contentArea = document.querySelector('.settings-content-area');
+  if (contentArea && window.innerWidth <= 900) {
+    contentArea.classList.add('mobile-active');
+    document.body.classList.add('in-settings-section-mobile');
+  }
+}
+
+export function closeSettingsSectionMobile() {
+  const contentArea = document.querySelector('.settings-content-area');
+  if (contentArea) {
+    contentArea.classList.remove('mobile-active');
+  }
+  document.body.classList.remove('in-settings-section-mobile');
+}
+
 export function switchSettingsSection(section) {
+  openSettingsSectionMobile();
   if (currentActiveSection === section || isSwitchingSection) return;
   isSwitchingSection = true;
 
@@ -255,9 +272,18 @@ export function switchSettingsSection(section) {
 }
 
 export function initSettings() {
+  // Привязка мобильных кнопок "Назад к разделам"
+  document.querySelectorAll('.settings-back-mobile-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      closeSettingsSectionMobile();
+    });
+  });
+
   // Переключение вкладок слева в настройках
   if (settingsNavAccount) {
     settingsNavAccount.addEventListener('click', () => {
+      openSettingsSectionMobile();
       if (isSubpageOpen) {
         closeLifecycleSubpage();
       } else {

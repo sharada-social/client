@@ -42,8 +42,14 @@ export function updateHeaderConnectionText(state = currentState) {
   titleEl.classList.add('fade-out');
 
   animTimer = setTimeout(() => {
-    if (state === 'reconnecting' || state === 'connecting' || state === 'offline') {
-      titleEl.textContent = state === 'offline' ? 'Ожидание сети...' : 'Соединение...';
+    if (state === 'reconnecting') {
+      titleEl.textContent = 'Соединение...';
+      titleEl.classList.add('reconnecting');
+    } else if (state === 'connecting') {
+      titleEl.textContent = 'Подключение...';
+      titleEl.classList.add('reconnecting');
+    } else if (state === 'offline') {
+      titleEl.textContent = 'Ожидание сети...';
       titleEl.classList.add('reconnecting');
     } else {
       const u = getCurrentUser();

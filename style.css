@@ -820,6 +820,33 @@ html, body {
   animation: typingPulse 1.6s ease-in-out infinite;
 }
 
+.chat-typing-user-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #ff2d55;
+  white-space: nowrap;
+}
+
+.chat-list-typing-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 3.5px;
+  height: 14px;
+}
+
+.chat-list-typing-dots span {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #ff2d55;
+  box-shadow: 0 0 6px rgba(255, 45, 85, 0.7);
+  animation: typingDotPulse 1.2s infinite ease-in-out;
+}
+.chat-list-typing-dots span:nth-child(1) { animation-delay: 0s; }
+.chat-list-typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+.chat-list-typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+
 @keyframes typingPulse {
   0%, 100% { opacity: 0.85; }
   50% { opacity: 1; text-shadow: 0 0 14px rgba(239, 68, 68, 0.95); }
@@ -1225,36 +1252,37 @@ html, body {
 }
 
 /* ==========================================================
-   ОБЛАЧКА ПЕЧАТАНИЯ (TYPING CLOUDS) В СТИЛЕ TELEGRAM
+   ОБЛАЧКА ПЕЧАТАНИЯ (TYPING CLOUDS) БЕЗ ТЕКСТА
    ========================================================== */
 .chat-typing-container {
   position: absolute;
-  bottom: 84px;
-  left: 24px;
+  bottom: calc(100% + 8px);
+  left: 20px;
   display: flex;
   flex-direction: column-reverse;
-  gap: 8px;
-  z-index: 20;
+  gap: 6px;
+  z-index: 25;
   pointer-events: none;
 }
 
 .chat-typing-cloud {
   position: relative;
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 16px 8px 12px;
+  gap: 8px;
+  padding: 8px 14px;
   background: rgba(26, 26, 26, 0.94);
   border: 1px solid rgba(255, 255, 255, 0.12);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
-  border-radius: 22px;
+  border-radius: 20px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
   opacity: 1;
   transform: translateY(0) scale(1);
   transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1), transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
   pointer-events: none;
   animation: typingCloudPopIn 0.28s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  width: fit-content;
 }
 
 .chat-typing-cloud.hidden {
@@ -1473,6 +1501,274 @@ html, body {
   background: #10b981;
   box-shadow: 0 0 8px rgba(16, 185, 129, 0.8);
   display: inline-block;
+}
+
+/* ==========================================================
+   ВСПЛЫВАЮЩЕЕ МЕНЮ РЕАКЦИЙ И ДЕЙСТВИЙ НАД СООБЩЕНИЕМ
+   ========================================================== */
+.message-action-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.message-action-backdrop.active {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.message-action-menu {
+  position: fixed;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  z-index: 10000;
+  transform: scale(0.85);
+  opacity: 0;
+  transition: transform 0.22s cubic-bezier(0.175, 0.885, 0.32, 1.275), opacity 0.2s ease;
+  filter: drop-shadow(0 12px 32px rgba(0, 0, 0, 0.65));
+}
+
+.message-action-backdrop.active .message-action-menu {
+  transform: scale(1);
+  opacity: 1;
+}
+
+.message-reactions-pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(30, 30, 30, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 36px;
+  padding: 6px 14px;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+
+.reaction-emoji-btn {
+  font-size: 26px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 50%;
+  transition: transform 0.16s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  line-height: 1;
+  user-select: none;
+}
+
+.reaction-emoji-btn:hover, .reaction-emoji-btn:active {
+  transform: scale(1.4);
+}
+
+.message-action-reply-btn {
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: rgba(36, 36, 36, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 18px;
+  padding: 10px 20px;
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  width: 100%;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+
+.message-action-reply-btn:hover {
+  background: #444;
+  border-color: rgba(255, 255, 255, 0.28);
+  transform: translateY(-1px);
+}
+
+.message-action-reply-btn:active {
+  transform: scale(0.97);
+}
+
+.action-reply-icon {
+  width: 18px;
+  height: 18px;
+  fill: currentColor;
+}
+
+/* Реакции на самом сообщении */
+.message-reactions-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.message-reaction-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 14px;
+  padding: 2px 8px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.15s, background 0.15s, border-color 0.15s;
+  user-select: none;
+  color: #fff;
+}
+
+.message-reaction-chip:hover {
+  background: rgba(255, 255, 255, 0.18);
+  transform: scale(1.08);
+}
+
+.message-reaction-chip.active {
+  border-color: rgba(255, 75, 75, 0.6);
+  background: rgba(224, 22, 22, 0.35);
+}
+
+/* Цитата внутри пузыря сообщения */
+.message-quote-box {
+  display: flex;
+  align-items: stretch;
+  background: rgba(0, 0, 0, 0.24);
+  border-radius: 10px;
+  margin-bottom: 6px;
+  padding: 6px 10px;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  transition: background 0.18s;
+  border-left: 3px solid var(--primary-red-accent);
+}
+
+.message-quote-box:hover {
+  background: rgba(0, 0, 0, 0.38);
+}
+
+.quote-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow: hidden;
+  padding-left: 2px;
+}
+
+.quote-author {
+  font-size: 12px;
+  font-weight: 800;
+  color: #ff7878;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.quote-text {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.88);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Полоса предпросмотра ответа над полем ввода */
+.reply-preview-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  background: #1c1c1c;
+  border-radius: 16px;
+  border-left: 3px solid var(--primary-red-accent);
+  margin-bottom: 8px;
+  animation: replySlideDown 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes replySlideDown {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.reply-bar-body {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.reply-bar-sender {
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--primary-red-accent);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.reply-bar-text {
+  font-size: 13px;
+  color: #ccc;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.reply-bar-close {
+  background: transparent;
+  border: none;
+  color: #888;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s, background 0.15s;
+}
+
+.reply-bar-close:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.reply-bar-close svg {
+  width: 18px;
+  height: 18px;
+  fill: currentColor;
+}
+
+/* Подсветка сообщения при переходе к цитате */
+.message-bubble.highlight-quote {
+  animation: highlightPulse 1.2s ease-out;
+}
+
+@keyframes highlightPulse {
+  0% { box-shadow: 0 0 0 4px var(--primary-red-accent), 0 0 24px rgba(224, 22, 22, 0.8); }
+  100% { box-shadow: none; }
+}
+
+/* ==========================================================
+   КНОПКА НАЗАД В НАСТРОЙКАХ (СКРЫТА НА ДЕСКТОПЕ)
+   ========================================================== */
+.settings-back-mobile-btn {
+  display: none;
 }
 
 /* ==========================================================
@@ -2431,25 +2727,58 @@ html, body {
     display: none;
   }
 
-  .settings-layout-wrapper {
-    flex-direction: column;
-    max-width: 100%;
+  .settings-back-mobile-btn {
+    display: inline-flex !important;
+    background: transparent;
+    border: none;
+    color: #fff;
+    cursor: pointer;
+    padding: 6px;
+    margin-right: 6px;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+  }
+
+  #viewSettings {
+    position: relative;
+    width: 100%;
     height: 100%;
-    overflow-y: auto;
-    gap: 10px;
+    overflow: hidden;
   }
 
   .settings-sidebar {
     width: 100%;
+    height: 100%;
     border-radius: 0;
-    padding: 16px 14px;
+    padding: 16px 14px 90px 14px;
     flex-shrink: 0;
+    overflow-y: auto;
   }
 
   .settings-content-area {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
     border-radius: 0;
-    padding: 20px 16px 90px 16px;
-    overflow-y: visible;
+    padding: 16px 16px 90px 16px;
+    background-color: var(--bg-sidebar);
+    overflow-y: auto;
+    transform: translateX(100%);
+    transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+    z-index: 35;
+  }
+
+  .settings-content-area.mobile-active {
+    transform: translateX(0);
+  }
+
+  body.in-settings-section-mobile .bottom-bar {
+    opacity: 0 !important;
+    pointer-events: none !important;
+    transform: translateY(20px) !important;
+    display: none !important;
   }
 
   .auth-card {
@@ -3387,15 +3716,20 @@ button:focus, button:focus-visible, button:active {
 }
 
 .header-animated-title.reconnecting {
-  color: #f59e0b;
-  font-size: 13px;
-  letter-spacing: 0.2px;
-  animation: reconnectPulse 1.6s ease-in-out infinite;
+  font-size: inherit;
+  font-weight: inherit;
+  color: inherit;
+  letter-spacing: inherit;
+  animation: reconnectBlink 1.4s ease-in-out infinite;
 }
 
-@keyframes reconnectPulse {
-  0%, 100% { opacity: 0.6; }
-  50% { opacity: 1; }
+@keyframes reconnectBlink {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
 }
 
 /* ==========================================================

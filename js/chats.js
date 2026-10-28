@@ -200,6 +200,22 @@ export function formatLastSeen(dateStr) {
   return `был(а) ${d.toLocaleDateString([], { day: 'numeric', month: 'short' })}`;
 }
 
+export async function syncOnlineUsers() {
+  if (!getAuthToken()) return;
+  try {
+    const res = await authFetch('/api/users/online');
+    if (res.ok) {
+      const data = await res.json();
+      onlineUsers.clear();
+      (data.online_user_ids || []).forEach(id => onlineUsers.add(id));
+      (data.online_usernames || []).forEach(name => onlineUsers.add(name));
+      updateOnlineStatusUI();
+    }
+  } catch (e) {
+    console.warn('Failed to sync online users', e);
+  }
+}
+
 export async function loadChannels() {
   if (!getAuthToken()) return;
 
@@ -219,6 +235,7 @@ export async function loadChannels() {
       cachedChannels = await res.json() || [];
       localStorage.setItem('sharada_cached_channels', JSON.stringify(cachedChannels));
       renderChannelList(cachedChannels);
+      syncOnlineUsers();
     }
   } catch (e) {
     console.warn('Network offline or server down, using cached channels', e);
@@ -299,7 +316,6 @@ export function renderChannelList(channels) {
           <span class="chat-name">
             ${escapeHtml(ch.name)}
             ${(ch.is_e2ee && ch.type !== 'saved') ? '<span class="badge badge-e2ee">E2EE</span>' : ''}
-            ${isDirect && isDirectOnline ? '<span class="chat-online-badge">В сети</span>' : ''}
           </span>
           <div class="chat-meta-right">
             ${isPinned ? `<svg class="chat-pin-icon" viewBox="0 0 24 24"><path d="M19.1835 7.80516L16.2188 4.83755C14.1921 2.8089 13.1788 1.79457 12.0904 2.03468C11.0021 2.2748 10.5086 3.62155 9.5217 6.31506L8.85373 8.1381C8.59063 8.85617 8.45908 9.2152 8.22239 9.49292C8.11619 9.61754 7.99536 9.72887 7.86251 9.82451C7.56644 10.0377 7.19811 10.1392 6.46145 10.3423C4.80107 10.8 3.97088 11.0289 3.65804 11.5721C3.5228 11.8069 3.45242 12.0735 3.45413 12.3446C3.45809 12.9715 4.06698 13.581 5.28476 14.8L6.69935 16.2163L2.22345 20.6964C1.92552 20.9946 1.92552 21.4782 2.22345 21.7764C2.52138 22.0746 3.00443 22.0746 3.30236 21.7764L7.77841 17.2961L9.24441 18.7635C10.4699 19.9902 11.0827 20.6036 11.7134 20.6045C11.9792 20.6049 12.2404 20.5358 12.4713 20.4041C13.0192 20.0914 13.2493 19.2551 13.7095 17.5825C13.9119 16.8472 14.013 16.4795 14.2254 16.1835C14.3184 16.054 14.4262 15.9358 14.5468 15.8314C14.8221 15.593 15.1788 15.459 15.8922 15.191L17.7362 14.4981C20.4 13.4973 21.7319 12.9969 21.9667 11.9115C22.2014 10.826 21.1954 9.81905 19.1835 7.80516Z" fill="currentColor"/></svg>` : ''}
@@ -462,9 +478,11 @@ export function openChat(channel) {
         document.body.classList.add('in-chat-mobile');
       }
 
+      cancelReply();
       loadMessages(channel.id);
       setTimeout(() => {
         if (activeChatWindow) activeChatWindow.classList.remove('page-fade-in');
+        scrollChatToBottom();
         isOpeningChat = false;
       }, 220);
     }, 150);
@@ -483,12 +501,14 @@ export function openChat(channel) {
       setChatHeaderData(channel);
       if (chatHeaderUser) chatHeaderUser.classList.remove('header-fade-out');
 
+      cancelReply();
       loadMessages(channel.id).then(() => {
         if (messagesContainer) {
           messagesContainer.classList.remove('chat-switching-out');
           messagesContainer.classList.add('chat-switching-in');
           setTimeout(() => {
             if (messagesContainer) messagesContainer.classList.remove('chat-switching-in');
+            scrollChatToBottom();
             isOpeningChat = false;
           }, 220);
         } else {
@@ -511,6 +531,23 @@ export function getMessageStatusHtml(msg) {
   return STATUS_ICONS.sent;
 }
 
+export function scrollChatToBottom(smooth = false) {
+  if (!messagesContainer) return;
+  const exec = () => {
+    messagesContainer.scrollTo({
+      top: messagesContainer.scrollHeight,
+      behavior: smooth ? 'smooth' : 'auto'
+    });
+  };
+  exec();
+  requestAnimationFrame(() => {
+    exec();
+    setTimeout(exec, 40);
+    setTimeout(exec, 120);
+    setTimeout(exec, 260);
+  });
+}
+
 let currentOldestMessageId = null;
 let hasMoreMessages = true;
 let isLoadingMore = false;
@@ -526,11 +563,19 @@ export async function loadMessages(channelId) {
   try {
     const cached = localStorage.getItem(`sharada_cached_messages_${channelId}`);
     if (cached) {
-      const msgs = JSON.parse(cached);
+      let msgs = JSON.parse(cached);
       if (msgs && msgs.length > 0) {
+        const seenIds = new Set();
+        msgs = msgs.filter(m => {
+          if (!m || !m.id) return false;
+          if (seenIds.has(m.id)) return false;
+          seenIds.add(m.id);
+          return true;
+        });
         messagesContainer.innerHTML = '';
         currentOldestMessageId = msgs[0]?.id;
         msgs.forEach((m, idx) => appendMessageToUI(m, idx));
+        scrollChatToBottom();
         hasCache = true;
       }
     }
@@ -551,6 +596,7 @@ export async function loadMessages(channelId) {
         hasMoreMessages = msgs.length >= 50;
         localStorage.setItem(`sharada_cached_messages_${channelId}`, JSON.stringify(msgs));
         msgs.forEach((m, idx) => appendMessageToUI(m, idx));
+        scrollChatToBottom();
       } else {
         hasMoreMessages = false;
         messagesContainer.innerHTML = '<div style="text-align:center; color:var(--text-sub); margin:auto 0;">История сообщений пуста. Начните диалог!</div>';
@@ -598,38 +644,333 @@ export async function loadOlderMessages(channelId) {
   }
 }
 
+let currentReplyingMessage = null;
+let activeActionMessage = null;
+
+export function setReplyingTo(msg) {
+  if (!msg) return;
+  currentReplyingMessage = msg;
+  const replyBar = document.getElementById('replyPreviewBar');
+  const replySender = document.getElementById('replyBarSender');
+  const replyText = document.getElementById('replyBarText');
+  const msgInput = document.getElementById('messageInput');
+
+  if (replyBar && replySender && replyText) {
+    replySender.textContent = msg.sender || msg.sender_name || 'Собеседник';
+    replyText.textContent = msg.content || '';
+    replyBar.style.display = 'flex';
+  }
+
+  if (msgInput) {
+    msgInput.focus();
+  }
+}
+
+export function cancelReply() {
+  currentReplyingMessage = null;
+  const replyBar = document.getElementById('replyPreviewBar');
+  if (replyBar) {
+    replyBar.style.display = 'none';
+  }
+}
+
+export function getMsgDomId(id) {
+  if (!id) return '';
+  const str = String(id);
+  if (str.startsWith('temp_')) return `msg-${str}`;
+  const clean = str.replace(/^(msg-)+/, '');
+  return `msg-${clean}`;
+}
+
+export function scrollToOriginalMessage(msgId) {
+  if (!msgId) return;
+  const domId = getMsgDomId(msgId);
+  const target = document.getElementById(domId);
+  if (target) {
+    target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    target.classList.remove('highlight-quote');
+    void target.offsetWidth;
+    target.classList.add('highlight-quote');
+    setTimeout(() => target.classList.remove('highlight-quote'), 1200);
+  }
+}
+
+export function openMessageActionMenu(msg, bubbleElement) {
+  const backdrop = document.getElementById('messageActionBackdrop');
+  const menu = document.getElementById('messageActionMenu');
+  if (!backdrop || !menu || !bubbleElement) return;
+
+  activeActionMessage = msg;
+  backdrop.classList.add('active');
+
+  const rect = bubbleElement.getBoundingClientRect();
+  const menuWidth = 260;
+  const menuHeight = 110;
+
+  let left = rect.left + rect.width / 2 - menuWidth / 2;
+  left = Math.max(16, Math.min(window.innerWidth - menuWidth - 16, left));
+
+  let top = rect.top - menuHeight - 12;
+  if (top < 60) {
+    top = rect.bottom + 12;
+  }
+  top = Math.max(16, Math.min(window.innerHeight - menuHeight - 16, top));
+
+  menu.style.left = `${left}px`;
+  menu.style.top = `${top}px`;
+}
+
+export function closeMessageActionMenu() {
+  const backdrop = document.getElementById('messageActionBackdrop');
+  if (backdrop) backdrop.classList.remove('active');
+  activeActionMessage = null;
+}
+
+export function toggleReaction(msg, emoji) {
+  if (!msg || !msg.id) return;
+  if (!msg.reactions) msg.reactions = {};
+
+  const currentCount = msg.reactions[emoji] || 0;
+  if (currentCount > 0) {
+    msg.reactions[emoji] = currentCount - 1;
+    if (msg.reactions[emoji] <= 0) delete msg.reactions[emoji];
+  } else {
+    msg.reactions[emoji] = 1;
+  }
+
+  if (currentChannelId) {
+    try {
+      const cacheKey = `sharada_cached_messages_${currentChannelId}`;
+      const cached = JSON.parse(localStorage.getItem(cacheKey) || '[]');
+      const target = cached.find(m => String(m.id) === String(msg.id));
+      if (target) {
+        target.reactions = msg.reactions;
+        localStorage.setItem(cacheKey, JSON.stringify(cached));
+      }
+    } catch (e) {}
+  }
+
+  const domId = getMsgDomId(msg.id);
+  const bubble = document.getElementById(domId);
+  if (bubble) {
+    let reactionsRow = bubble.querySelector('.message-reactions-row');
+    const chips = Object.entries(msg.reactions).map(([em, cnt]) => {
+      if (!cnt || cnt <= 0) return '';
+      return `<button type="button" class="message-reaction-chip active" data-emoji="${escapeHtml(em)}">${escapeHtml(em)} <span>${cnt}</span></button>`;
+    }).filter(Boolean).join('');
+
+    if (chips) {
+      if (!reactionsRow) {
+        reactionsRow = document.createElement('div');
+        reactionsRow.className = 'message-reactions-row';
+        const meta = bubble.querySelector('.message-meta');
+        bubble.insertBefore(reactionsRow, meta);
+      }
+      reactionsRow.innerHTML = chips;
+      reactionsRow.querySelectorAll('.message-reaction-chip').forEach(chip => {
+        chip.addEventListener('click', (e) => {
+          e.stopPropagation();
+          toggleReaction(msg, chip.dataset.emoji);
+        });
+      });
+    } else if (reactionsRow) {
+      reactionsRow.remove();
+    }
+  }
+}
+
+function setupSwipeToReply(bubble, msg) {
+  let touchStartX = 0;
+  let touchStartY = 0;
+  let touchStartTime = 0;
+  let isSwiping = false;
+
+  bubble.addEventListener('touchstart', (e) => {
+    if (e.touches.length !== 1) return;
+    touchStartX = e.touches[0].clientX;
+    touchStartY = e.touches[0].clientY;
+    touchStartTime = Date.now();
+    isSwiping = false;
+  }, { passive: true });
+
+  bubble.addEventListener('touchmove', (e) => {
+    if (e.touches.length !== 1) return;
+    const currentX = e.touches[0].clientX;
+    const currentY = e.touches[0].clientY;
+    const diffX = currentX - touchStartX;
+    const diffY = currentY - touchStartY;
+
+    if (Math.abs(diffX) > Math.abs(diffY) && diffX < -15) {
+      isSwiping = true;
+      const pull = Math.max(diffX, -65);
+      bubble.style.transform = `translateX(${pull}px)`;
+      bubble.style.transition = 'none';
+    }
+  }, { passive: true });
+
+  bubble.addEventListener('touchend', (e) => {
+    const diffX = e.changedTouches[0].clientX - touchStartX;
+    const diffY = e.changedTouches[0].clientY - touchStartY;
+    const duration = Date.now() - touchStartTime;
+
+    bubble.style.transition = 'transform 0.22s ease-out';
+    bubble.style.transform = '';
+
+    if (diffX < -45 && Math.abs(diffX) > Math.abs(diffY)) {
+      if (navigator.vibrate) navigator.vibrate(20);
+      setReplyingTo(msg);
+    } else if (!isSwiping && Math.abs(diffX) < 10 && Math.abs(diffY) < 10 && duration < 350) {
+      openMessageActionMenu(msg, bubble);
+    }
+  });
+}
+
 export function createMessageElement(msg, index = 0) {
   const currentUser = getCurrentUser();
-  const isMine = msg.sender_id === currentUser?.id;
+  const isMine = (currentUser && String(msg.sender_id) === String(currentUser.id)) || msg.sender_id === 'me' || msg.status === 'pending';
   const bubble = document.createElement('div');
-  if (msg.id) bubble.id = `msg-${msg.id}`;
+  const domId = getMsgDomId(msg.id);
+  if (domId) bubble.id = domId;
   bubble.className = `message-bubble ${isMine ? 'outgoing' : 'incoming'}`;
   if (typeof index === 'number' && index > 0) {
     bubble.style.animationDelay = `${Math.min(index * 25, 300)}ms`;
   }
   const timeStr = new Date(msg.created_at || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const cleanId = String(msg.id || '').replace(/^(msg-)+/, '');
+
+  // 1. Quoted message block (if this message is a reply)
+  let quoteHtml = '';
+  if (msg.reply_to) {
+    const q = typeof msg.reply_to === 'string' ? JSON.parse(msg.reply_to) : msg.reply_to;
+    if (q && q.content) {
+      quoteHtml = `
+        <div class="message-quote-box" data-quote-id="${escapeHtml(String(q.id || ''))}">
+          <div class="quote-content">
+            <div class="quote-author">${escapeHtml(q.sender_name || 'Собеседник')}</div>
+            <div class="quote-text">${escapeHtml(q.content)}</div>
+          </div>
+        </div>
+      `;
+    }
+  }
+
+  // 2. Reactions row
+  let reactionsHtml = '';
+  if (msg.reactions && Object.keys(msg.reactions).length > 0) {
+    const chips = Object.entries(msg.reactions).map(([emoji, count]) => {
+      if (!count || count <= 0) return '';
+      return `<button type="button" class="message-reaction-chip active" data-emoji="${escapeHtml(emoji)}">${escapeHtml(emoji)} <span>${count}</span></button>`;
+    }).filter(Boolean).join('');
+    if (chips) {
+      reactionsHtml = `<div class="message-reactions-row">${chips}</div>`;
+    }
+  }
 
   bubble.innerHTML = `
     ${!isMine ? `<div class="message-author">${escapeHtml(msg.sender || msg.sender_name || 'Собеседник')}</div>` : ''}
+    ${quoteHtml}
     <div class="message-text">${escapeHtml(msg.content)}</div>
+    ${reactionsHtml}
     <div class="message-meta">
       <span>${timeStr}</span>
-      ${isMine ? `<span class="msg-status-wrapper" id="msg-status-${msg.id}">${getMessageStatusHtml(msg)}</span>` : ''}
+      ${isMine ? `<span class="msg-status-wrapper" id="msg-status-${cleanId}">${getMessageStatusHtml(msg)}</span>` : ''}
     </div>
   `;
+
+  // Quote click -> scroll to original message
+  const quoteEl = bubble.querySelector('.message-quote-box');
+  if (quoteEl) {
+    quoteEl.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const quoteId = quoteEl.dataset.quoteId;
+      if (quoteId) {
+        scrollToOriginalMessage(quoteId);
+      }
+    });
+  }
+
+  // Reaction chip click
+  bubble.querySelectorAll('.message-reaction-chip').forEach(chip => {
+    chip.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const emoji = chip.dataset.emoji;
+      if (emoji && msg.id) {
+        toggleReaction(msg, emoji);
+      }
+    });
+  });
+
+  // Tap / click handler for opening reaction menu
+  bubble.addEventListener('click', (e) => {
+    if (e.target.closest('.message-quote-box') || e.target.closest('.message-reaction-chip')) return;
+    openMessageActionMenu(msg, bubble);
+  });
+
+  // Mobile swipe-to-reply touch events
+  setupSwipeToReply(bubble, msg);
+
   return bubble;
 }
 
 export function appendMessageToUI(msg, index = 0) {
   if (!messagesContainer || !msg) return;
-  // Дедупликация: предотвращаем удвоение
-  if (msg.id && document.getElementById(`msg-${msg.id}`)) {
-    return;
+
+  const domId = getMsgDomId(msg.id);
+  const cleanId = String(msg.id || '').replace(/^(msg-)+/, '');
+
+  // 1. Дедупликация: если элемент с таким нормализованным ID уже есть в DOM — обновляем статус и выходим
+  if (domId) {
+    const existing = document.getElementById(domId);
+    if (existing) {
+      const statusWrap = existing.querySelector('.msg-status-wrapper');
+      if (statusWrap && (msg.is_read || msg.status === 'read')) {
+        statusWrap.innerHTML = STATUS_ICONS.read;
+      }
+      return;
+    }
+  }
+
+  // 2. Если это подтвержденное сервером сообщение (постоянный ID)
+  const currentUser = getCurrentUser();
+  const isOutgoing = (currentUser && String(msg.sender_id) === String(currentUser.id)) || msg.sender_id === 'me';
+  const isServerMsg = msg.id && !String(msg.id).startsWith('temp_');
+
+  if (isOutgoing && isServerMsg) {
+    // 2a. Ищем временный оптимистичный пузырь (с id содержащим temp_)
+    const pendingBubbles = messagesContainer.querySelectorAll('.message-bubble[id*="temp_"]');
+    for (const pb of pendingBubbles) {
+      const textEl = pb.querySelector('.message-text');
+      if (textEl && textEl.textContent.trim() === String(msg.content || '').trim()) {
+        pb.id = domId;
+        const statusWrap = pb.querySelector('.msg-status-wrapper');
+        if (statusWrap) {
+          statusWrap.id = `msg-status-${cleanId}`;
+          statusWrap.innerHTML = (msg.is_read || msg.status === 'read') ? STATUS_ICONS.read : STATUS_ICONS.sent;
+        }
+        return;
+      }
+    }
+
+    // 2b. Дополнительная защита: проверяем последнее исходящее сообщение с идентичным текстом
+    const allOutgoing = messagesContainer.querySelectorAll('.message-bubble.outgoing');
+    if (allOutgoing.length > 0) {
+      const lastBubble = allOutgoing[allOutgoing.length - 1];
+      const textEl = lastBubble.querySelector('.message-text');
+      if (textEl && textEl.textContent.trim() === String(msg.content || '').trim()) {
+        lastBubble.id = domId;
+        const statusWrap = lastBubble.querySelector('.msg-status-wrapper');
+        if (statusWrap) {
+          statusWrap.id = `msg-status-${cleanId}`;
+          statusWrap.innerHTML = (msg.is_read || msg.status === 'read') ? STATUS_ICONS.read : STATUS_ICONS.sent;
+        }
+        return;
+      }
+    }
   }
 
   const bubble = createMessageElement(msg, index);
   messagesContainer.appendChild(bubble);
-  messagesContainer.scrollTop = messagesContainer.scrollHeight;
+  scrollChatToBottom();
 }
 
 export function handleTypingEvent(data) {
@@ -684,22 +1025,20 @@ function updateChatListTypingIndicator(channelId) {
 
   const typersList = Array.from(channelTypers.values());
   const first = typersList[0];
-  let text = 'печатает...';
-  if (first.action === 'voice') text = 'записывает голос...';
-  else if (first.action === 'video') text = 'записывает видео...';
-  else if (first.action === 'file') text = 'отправляет файл...';
-
   const ch = cachedChannels.find(c => c.id === channelId);
   const isGroup = ch?.type === 'group';
-  if (isGroup) {
-    if (typersList.length > 1) {
-      text = `${typersList.length} чел. печатают...`;
-    } else {
-      text = `${first.username}: ${text}`;
-    }
+
+  let authorPrefix = '';
+  if (isGroup && first.username) {
+    authorPrefix = `<span class="chat-typing-user-name">${escapeHtml(first.username)}</span>`;
   }
 
-  typingEl.innerHTML = `<span class="chat-typing-red-text">${escapeHtml(text)}</span>`;
+  typingEl.innerHTML = `
+    ${authorPrefix}
+    <div class="typing-dots chat-list-typing-dots">
+      <span></span><span></span><span></span>
+    </div>
+  `;
   previewEl.classList.add('hidden');
   typingEl.classList.add('active');
 }
@@ -786,32 +1125,9 @@ function renderTypingCloud() {
       `;
     }
 
-    // 3. Текст описания действия
-    let statusText = '';
-    if (actionKey === 'text') {
-      statusText = users.length > 1 ? 'печатают...' : 'печатает...';
-    } else if (actionKey === 'voice') {
-      statusText = users.length > 1 ? 'записывают голосовое...' : 'записывает голосовое...';
-    } else if (actionKey === 'video') {
-      statusText = users.length > 1 ? 'записывают видеосообщение...' : 'записывает видеосообщение...';
-    } else if (actionKey === 'file') {
-      statusText = users.length > 1 ? 'отправляют файл...' : 'отправляет файл...';
-    }
-
-    if (isGroup) {
-      if (users.length === 1) {
-        statusText = `${escapeHtml(users[0].username)} ${statusText}`;
-      } else if (users.length === 2) {
-        statusText = `${escapeHtml(users[0].username)} и ${escapeHtml(users[1].username)} ${statusText}`;
-      } else {
-        statusText = `${users.length} человек ${statusText}`;
-      }
-    }
-
     cloud.innerHTML = `
       ${avatarsHtml}
       <div class="typing-animation-box">${animHtml}</div>
-      <span class="typing-status-text">${statusText}</span>
     `;
 
     container.appendChild(cloud);
@@ -842,7 +1158,11 @@ export async function flushOutboxQueue() {
         const res = await authFetch(`/api/channels/${item.channel_id}/messages`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ content: item.content, is_e2ee: !!item.is_e2ee })
+          body: JSON.stringify({
+            content: item.content,
+            is_e2ee: !!item.is_e2ee,
+            reply_to: item.reply_to ? JSON.stringify(item.reply_to) : undefined
+          })
         });
 
         if (res.ok) {
@@ -850,15 +1170,18 @@ export async function flushOutboxQueue() {
           outboxQueue.shift();
           saveOutbox();
 
+          const cleanId = String(serverMsg.id).replace(/^(msg-)+/, '');
+          const newDomId = `msg-${cleanId}`;
+
           // Обновляем статус сообщения в DOM
           const statusWrap = document.getElementById(`msg-status-${item.temp_id}`);
           if (statusWrap) {
             statusWrap.innerHTML = STATUS_ICONS.sent;
-            statusWrap.id = `msg-status-${serverMsg.id}`;
+            statusWrap.id = `msg-status-${cleanId}`;
           }
-          const tempBubble = document.getElementById(`msg-${item.temp_id}`);
+          const tempBubble = document.getElementById(`msg-${item.temp_id}`) || document.getElementById(item.temp_id);
           if (tempBubble) {
-            tempBubble.id = `msg-${serverMsg.id}`;
+            tempBubble.id = newDomId;
           }
 
           // Обновляем в локальном кэше
@@ -868,7 +1191,7 @@ export async function flushOutboxQueue() {
             const idx = cached.findIndex(m => m.id === item.temp_id);
             if (idx !== -1) {
               cached[idx] = serverMsg;
-            } else {
+            } else if (!cached.some(m => getMsgDomId(m.id) === newDomId)) {
               cached.push(serverMsg);
             }
             localStorage.setItem(cacheKey, JSON.stringify(cached));
@@ -895,6 +1218,13 @@ export async function sendMessage() {
   // Очищаем поле ввода моментально, позволяя сразу писать следующее
   messageInput.value = '';
 
+  const replyingTo = currentReplyingMessage ? {
+    id: currentReplyingMessage.id,
+    sender_name: currentReplyingMessage.sender || currentReplyingMessage.sender_name || 'Собеседник',
+    content: currentReplyingMessage.content
+  } : null;
+  cancelReply();
+
   const currentUser = getCurrentUser();
   const tempId = 'temp_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8);
 
@@ -906,7 +1236,8 @@ export async function sendMessage() {
     content: text,
     created_at: new Date().toISOString(),
     is_read: false,
-    status: 'pending'
+    status: 'pending',
+    reply_to: replyingTo
   };
 
   // Мгновенное появление сообщения у себя в чате со значком часов
@@ -925,7 +1256,8 @@ export async function sendMessage() {
     temp_id: tempId,
     channel_id: currentChannelId,
     content: text,
-    is_e2ee: false
+    is_e2ee: false,
+    reply_to: replyingTo
   });
   saveOutbox();
 
@@ -996,6 +1328,94 @@ function closeNewChatModals() {
   if (searchInput) searchInput.value = '';
 }
 
+// ============================================================
+// СИСТЕМА УВЕДОМЛЕНИЙ (АУДИО WEBAUDIO И СИСТЕМНЫЕ БАННЕРЫ)
+// ============================================================
+let audioCtx = null;
+
+export function playNotificationSound() {
+  try {
+    const audio = new Audio('assets/sounds/notify.mp3');
+    audio.volume = 0.6;
+    audio.play().catch(() => {
+      playSynthesizedChime();
+    });
+  } catch (e) {
+    playSynthesizedChime();
+  }
+}
+
+function playSynthesizedChime() {
+  try {
+    if (!audioCtx) {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    if (audioCtx.state === 'suspended') {
+      audioCtx.resume();
+    }
+    const now = audioCtx.currentTime;
+
+    const osc1 = audioCtx.createOscillator();
+    const osc2 = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+
+    osc1.type = 'sine';
+    osc1.frequency.setValueAtTime(587.33, now); // D5
+    osc1.frequency.exponentialRampToValueAtTime(880, now + 0.12); // A5
+
+    osc2.type = 'triangle';
+    osc2.frequency.setValueAtTime(880, now + 0.08);
+    osc2.frequency.exponentialRampToValueAtTime(1174.66, now + 0.22); // D6
+
+    gain.gain.setValueAtTime(0, now);
+    gain.gain.linearRampToValueAtTime(0.25, now + 0.04);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+
+    osc1.connect(gain);
+    osc2.connect(gain);
+    gain.connect(audioCtx.destination);
+
+    osc1.start(now);
+    osc2.start(now + 0.06);
+    osc1.stop(now + 0.35);
+    osc2.stop(now + 0.35);
+  } catch (e) {
+    // Audio may be blocked by browser policy before user interaction
+  }
+}
+
+export function requestNotificationPermission() {
+  try {
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+  } catch (e) {}
+}
+
+export function showDesktopNotification(title, body, channelId) {
+  try {
+    if (!('Notification' in window) || Notification.permission !== 'granted') return;
+
+    const notif = new Notification(title || 'Sharada Messenger', {
+      body: body || 'Новое сообщение',
+      icon: 'assets/icons/app-icon.png',
+      tag: `sharada-channel-${channelId || 'chat'}`,
+      renotify: true
+    });
+
+    notif.onclick = () => {
+      window.focus();
+      if (channelId && channelId !== currentChannelId) {
+        const target = cachedChannels.find(c => c.id === channelId);
+        if (target) openChat(target);
+      }
+      notif.close();
+    };
+  } catch (e) {
+    console.warn('[Notification] Failed to show system notification', e);
+  }
+}
+
 let wsReconnectTimer = null;
 let wsHeartbeatTimer = null;
 
@@ -1023,6 +1443,8 @@ export function initWebSocket() {
 
   wsConn.onopen = () => {
     setConnectionState('connected');
+    onlineUsers.clear();
+    syncOnlineUsers();
     flushOutboxQueue();
     loadChannels();
   };
@@ -1032,9 +1454,22 @@ export function initWebSocket() {
       const msg = JSON.parse(event.data);
       if (msg.type === 'message') {
         const messageData = typeof msg.payload === 'string' ? JSON.parse(msg.payload) : msg.payload;
+        const currentUser = getCurrentUser();
+        const isFromMe = currentUser && String(messageData.sender_id) === String(currentUser.id);
+
+        // Звуковое и системное уведомление: ТОЛЬКО если сообщение не от нас и пользователь не в активном открытом чате!
+        if (!isFromMe) {
+          const isChatActiveAndFocused = (msg.channel_id === currentChannelId && document.hasFocus());
+          if (!isChatActiveAndFocused) {
+            playNotificationSound();
+            const senderTitle = messageData.sender_name || 'Новое сообщение';
+            showDesktopNotification(senderTitle, messageData.content, msg.channel_id);
+          }
+        }
+
         if (msg.channel_id === currentChannelId) {
           appendMessageToUI(messageData);
-          if (document.hasFocus()) {
+          if (!isFromMe && document.hasFocus()) {
             authFetch(`/api/channels/${currentChannelId}/read`, { method: 'POST' }).catch(() => {});
           }
           if (typingUsers.has(currentChannelId)) {
@@ -1053,10 +1488,24 @@ export function initWebSocket() {
         }
         loadChannels();
       } else if (msg.type === 'message_read') {
-        if (msg.channel_id === currentChannelId) {
+        const currentUser = getCurrentUser();
+        const readerId = msg.sender_id || (msg.payload && msg.payload.sender_id);
+        const isFromPartner = currentUser && readerId && String(readerId) !== String(currentUser.id);
+
+        if (msg.channel_id === currentChannelId && isFromPartner) {
           document.querySelectorAll('.message-bubble.outgoing .msg-status-wrapper').forEach(tick => {
             tick.innerHTML = STATUS_ICONS.read;
           });
+          try {
+            const cacheKey = `sharada_cached_messages_${currentChannelId}`;
+            const cached = JSON.parse(localStorage.getItem(cacheKey) || '[]');
+            cached.forEach(m => {
+              if (currentUser && String(m.sender_id) === String(currentUser.id)) {
+                m.is_read = true;
+              }
+            });
+            localStorage.setItem(cacheKey, JSON.stringify(cached));
+          } catch (e) {}
         }
         loadChannels();
       } else if (msg.type === 'session_revoked') {
@@ -1087,11 +1536,15 @@ export function initWebSocket() {
 
   wsConn.onclose = () => {
     setConnectionState('reconnecting');
+    onlineUsers.clear();
+    updateOnlineStatusUI();
     wsReconnectTimer = setTimeout(initWebSocket, 2500);
   };
 
   wsConn.onerror = () => {
     setConnectionState('reconnecting');
+    onlineUsers.clear();
+    updateOnlineStatusUI();
   };
 
   // Heartbeat пинг каждые 12 секунд для своевременного обнаружения обрыва сети
@@ -1143,6 +1596,52 @@ export function initChatEvents() {
       }
     });
   }
+
+  // Кнопка отмены ответа в баре предпросмотра
+  const btnCancelReply = document.getElementById('btnCancelReply');
+  if (btnCancelReply) {
+    btnCancelReply.addEventListener('click', cancelReply);
+  }
+
+  // Всплывающее меню сообщения: затемненный фон закрывает меню при клике
+  const messageActionBackdrop = document.getElementById('messageActionBackdrop');
+  if (messageActionBackdrop) {
+    messageActionBackdrop.addEventListener('click', (e) => {
+      if (e.target === messageActionBackdrop) {
+        closeMessageActionMenu();
+      }
+    });
+  }
+
+  // Кнопка "Ответить" в меню сообщения
+  const btnActionReply = document.getElementById('btnActionReply');
+  if (btnActionReply) {
+    btnActionReply.addEventListener('click', () => {
+      if (activeActionMessage) {
+        setReplyingTo(activeActionMessage);
+      }
+      closeMessageActionMenu();
+    });
+  }
+
+  // 5 кнопок реакций в меню сообщения
+  document.querySelectorAll('.reaction-emoji-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const reaction = btn.dataset.reaction;
+      if (activeActionMessage && reaction) {
+        toggleReaction(activeActionMessage, reaction);
+      }
+      closeMessageActionMenu();
+    });
+  });
+
+  // Закрытие меню и отмена ответа по Escape
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      closeMessageActionMenu();
+      cancelReply();
+    }
+  });
 
   // Создание группы
   if (btnCloseNewGroupModal) {
@@ -1217,6 +1716,9 @@ export function initChatEvents() {
       });
     });
   }
+
+  // Запрос разрешения на отправку уведомлений при первом клике пользователя
+  document.addEventListener('click', requestNotificationPermission, { once: true });
 }
 
 // Тестовая утилита в глобальной области видимости для проверки облачка

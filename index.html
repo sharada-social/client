@@ -302,11 +302,23 @@
             <!-- Список сообщений -->
             <div class="messages-container" id="messagesContainer"></div>
 
-            <!-- Всплывающий стек отдельных облачков печатания (по типам действий) -->
-            <div id="chatTypingContainer" class="chat-typing-container"></div>
-
             <!-- Поле ввода сообщения -->
             <div class="message-input-area">
+              <!-- Всплывающий стек отдельных облачков печатания (по типам действий) -->
+              <div id="chatTypingContainer" class="chat-typing-container"></div>
+
+              <!-- Полоса предпросмотра ответа на сообщение -->
+              <div id="replyPreviewBar" class="reply-preview-bar" style="display:none;">
+                <div class="reply-bar-accent"></div>
+                <div class="reply-bar-body">
+                  <div class="reply-bar-sender" id="replyBarSender">Собеседник</div>
+                  <div class="reply-bar-text" id="replyBarText">Текст сообщения...</div>
+                </div>
+                <button type="button" id="btnCancelReply" class="reply-bar-close" title="Отменить ответ">
+                  <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" fill="currentColor"/></svg>
+                </button>
+              </div>
+
               <div class="input-capsule">
                 <button type="button" id="btnAttachFile" class="icon-btn" title="Прикрепить файл" style="margin-right:6px; color:var(--text-muted); display:inline-flex; align-items:center; justify-content:center;">
                   <svg viewBox="0 0 24 24" style="width:20px; height:20px;" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
@@ -400,7 +412,7 @@
             <!-- Футер настроек: Название и версия (триггер 5 кликов для разработчиков) -->
             <div class="settings-sidebar-footer" id="settingsDevTrigger" title="Нажмите 5 раз для режима разработчика">
               <div class="settings-brand-text">sharada</div>
-              <div class="settings-version-text">v1.1.3 (Release)</div>
+              <div class="settings-version-text">v1.2.0 (Release)</div>
               <div id="devStepsRemaining" class="dev-steps-pill" style="display:none;"></div>
             </div>
           </aside>
@@ -410,6 +422,9 @@
             <!-- РАЗДЕЛ 1: АККАУНТ -->
             <div id="settingsSectionAccount" class="settings-tab-pane">
               <div class="settings-panel-header">
+                <button type="button" class="settings-back-mobile-btn icon-btn" title="Назад к разделам">
+                  <svg style="width:20px; height:20px;" viewBox="0 0 24 24" fill="none"><path d="M20 11.25C20.4142 11.25 20.75 11.5858 20.75 12C20.75 12.4142 20.4142 12.75 20 12.75H10.75L10.75 18C10.75 18.3034 10.5673 18.5768 10.287 18.6929C10.0068 18.809 9.68417 18.7449 9.46967 18.5304L3.46967 12.5304C3.32902 12.3897 3.25 12.1989 3.25 12C3.25 11.8011 3.32902 11.6103 3.46967 11.4697L9.46967 5.46969C9.68417 5.25519 10.0068 5.19103 10.287 5.30711C10.5673 5.4232 10.75 5.69668 10.75 6.00002L10.75 11.25H20Z" fill="currentColor"/></svg>
+                </button>
                 <h1 class="panel-title">Аккаунт</h1>
               </div>
 
@@ -516,6 +531,9 @@
             <!-- РАЗДЕЛ: КОНФИДЕНЦИАЛЬНОСТЬ И БЕЗОПАСНОСТЬ -->
             <div id="settingsSectionPrivacy" class="settings-tab-pane" style="display:none;">
               <div class="settings-panel-header">
+                <button type="button" class="settings-back-mobile-btn icon-btn" title="Назад к разделам">
+                  <svg style="width:20px; height:20px;" viewBox="0 0 24 24" fill="none"><path d="M20 11.25C20.4142 11.25 20.75 11.5858 20.75 12C20.75 12.4142 20.4142 12.75 20 12.75H10.75L10.75 18C10.75 18.3034 10.5673 18.5768 10.287 18.6929C10.0068 18.809 9.68417 18.7449 9.46967 18.5304L3.46967 12.5304C3.32902 12.3897 3.25 12.1989 3.25 12C3.25 11.8011 3.32902 11.6103 3.46967 11.4697L9.46967 5.46969C9.68417 5.25519 10.0068 5.19103 10.287 5.30711C10.5673 5.4232 10.75 5.69668 10.75 6.00002L10.75 11.25H20Z" fill="currentColor"/></svg>
+                </button>
                 <h1 class="panel-title">Конфиденциальность и безопасность</h1>
               </div>
 
@@ -558,6 +576,9 @@
             <!-- РАЗДЕЛ: ДАННЫЕ И ПАМЯТЬ (ХРАНИЛИЩЕ И КЭШ) -->
             <div id="settingsSectionStorage" class="settings-tab-pane" style="display:none;">
               <div class="settings-panel-header">
+                <button type="button" class="settings-back-mobile-btn icon-btn" title="Назад к разделам">
+                  <svg style="width:20px; height:20px;" viewBox="0 0 24 24" fill="none"><path d="M20 11.25C20.4142 11.25 20.75 11.5858 20.75 12C20.75 12.4142 20.4142 12.75 20 12.75H10.75L10.75 18C10.75 18.3034 10.5673 18.5768 10.287 18.6929C10.0068 18.809 9.68417 18.7449 9.46967 18.5304L3.46967 12.5304C3.32902 12.3897 3.25 12.1989 3.25 12C3.25 11.8011 3.32902 11.6103 3.46967 11.4697L9.46967 5.46969C9.68417 5.25519 10.0068 5.19103 10.287 5.30711C10.5673 5.4232 10.75 5.69668 10.75 6.00002L10.75 11.25H20Z" fill="currentColor"/></svg>
+                </button>
                 <h1 class="panel-title">Данные и память</h1>
               </div>
 
@@ -617,7 +638,12 @@
             <!-- РАЗДЕЛ 2: АДМИНИСТРИРОВАНИЕ (ВСТРОЕН В НАСТРОЙКИ, ТОЛЬКО ДЛЯ АДМИНА) -->
             <div id="settingsSectionAdmin" class="settings-tab-pane" style="display:none;">
               <div class="settings-panel-header" style="display:flex; justify-content:space-between; align-items:center;">
-                <h1 class="panel-title">Администрирование</h1>
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <button type="button" class="settings-back-mobile-btn icon-btn" title="Назад к разделам">
+                    <svg style="width:20px; height:20px;" viewBox="0 0 24 24" fill="none"><path d="M20 11.25C20.4142 11.25 20.75 11.5858 20.75 12C20.75 12.4142 20.4142 12.75 20 12.75H10.75L10.75 18C10.75 18.3034 10.5673 18.5768 10.287 18.6929C10.0068 18.809 9.68417 18.7449 9.46967 18.5304L3.46967 12.5304C3.32902 12.3897 3.25 12.1989 3.25 12C3.25 11.8011 3.32902 11.6103 3.46967 11.4697L9.46967 5.46969C9.68417 5.25519 10.0068 5.19103 10.287 5.30711C10.5673 5.4232 10.75 5.69668 10.75 6.00002L10.75 11.25H20Z" fill="currentColor"/></svg>
+                  </button>
+                  <h1 class="panel-title">Администрирование</h1>
+                </div>
                 <button id="btnAdminRefresh" class="action-pill-btn" title="Обновить списки">Обновить</button>
               </div>
 
@@ -713,6 +739,9 @@
             <!-- РАЗДЕЛ 3: УСТРОЙСТВА И УПРАВЛЕНИЕ СЕССИЯМИ -->
             <div id="settingsSectionDevices" class="settings-tab-pane" style="display:none;">
               <div class="settings-panel-header">
+                <button type="button" class="settings-back-mobile-btn icon-btn" title="Назад к разделам">
+                  <svg style="width:20px; height:20px;" viewBox="0 0 24 24" fill="none"><path d="M20 11.25C20.4142 11.25 20.75 11.5858 20.75 12C20.75 12.4142 20.4142 12.75 20 12.75H10.75L10.75 18C10.75 18.3034 10.5673 18.5768 10.287 18.6929C10.0068 18.809 9.68417 18.7449 9.46967 18.5304L3.46967 12.5304C3.32902 12.3897 3.25 12.1989 3.25 12C3.25 11.8011 3.32902 11.6103 3.46967 11.4697L9.46967 5.46969C9.68417 5.25519 10.0068 5.19103 10.287 5.30711C10.5673 5.4232 10.75 5.69668 10.75 6.00002L10.75 11.25H20Z" fill="currentColor"/></svg>
+                </button>
                 <h1 class="panel-title">Устройства</h1>
               </div>
 
@@ -782,9 +811,14 @@
             <!-- РАЗДЕЛ 4: ДЛЯ РАЗРАБОТЧИКОВ (РЕЖИМ ОТЛАДКИ) -->
             <div id="settingsSectionDeveloper" class="settings-tab-pane" style="display:none; flex-direction:column; gap:22px;">
               <div class="settings-panel-header" style="display:flex; justify-content:space-between; align-items:center;">
-                <div>
-                  <h1 class="panel-title" style="margin:0;">Для разработчиков</h1>
-                  <div style="font-size:13px; color:var(--text-muted); margin-top:4px;">Панель отладки и системные логи клиента</div>
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <button type="button" class="settings-back-mobile-btn icon-btn" title="Назад к разделам">
+                    <svg style="width:20px; height:20px;" viewBox="0 0 24 24" fill="none"><path d="M20 11.25C20.4142 11.25 20.75 11.5858 20.75 12C20.75 12.4142 20.4142 12.75 20 12.75H10.75L10.75 18C10.75 18.3034 10.5673 18.5768 10.287 18.6929C10.0068 18.809 9.68417 18.7449 9.46967 18.5304L3.46967 12.5304C3.32902 12.3897 3.25 12.1989 3.25 12C3.25 11.8011 3.32902 11.6103 3.46967 11.4697L9.46967 5.46969C9.68417 5.25519 10.0068 5.19103 10.287 5.30711C10.5673 5.4232 10.75 5.69668 10.75 6.00002L10.75 11.25H20Z" fill="currentColor"/></svg>
+                  </button>
+                  <div>
+                    <h1 class="panel-title" style="margin:0;">Для разработчиков</h1>
+                    <div style="font-size:13px; color:var(--text-muted); margin-top:4px;">Панель отладки и системные логи клиента</div>
+                  </div>
                 </div>
                 <span class="badge" style="background:rgba(224,22,22,0.2); color:#ff6b6b; border:1px solid rgba(224,22,22,0.5); font-weight:800; padding:6px 14px; border-radius:12px; letter-spacing:0.8px;">DEV MODE</span>
               </div>
@@ -1472,6 +1506,7 @@
         var backdrop = document.getElementById('authBackdrop');
         if (backdrop) backdrop.classList.add('hidden');
         if (data.user) {
+          try { localStorage.setItem('sharada_cached_user', JSON.stringify(data.user)); } catch (e) {}
           var sUser = document.getElementById('sidebarUsername');
           if (sUser) sUser.textContent = data.user.username;
           var sRole = document.getElementById('userBadgeRole');
@@ -1496,6 +1531,25 @@
       }
     });
   </script>
+  <!-- Всплывающее меню сообщения: реакции + ответить с затемнением фона -->
+  <div id="messageActionBackdrop" class="message-action-backdrop">
+    <div id="messageActionMenu" class="message-action-menu">
+      <div class="message-reactions-pill">
+        <button type="button" class="reaction-emoji-btn" data-reaction="👍" title="👍">👍</button>
+        <button type="button" class="reaction-emoji-btn" data-reaction="❤️" title="❤️">❤️</button>
+        <button type="button" class="reaction-emoji-btn" data-reaction="🔥" title="🔥">🔥</button>
+        <button type="button" class="reaction-emoji-btn" data-reaction="😂" title="😂">😂</button>
+        <button type="button" class="reaction-emoji-btn" data-reaction="😮" title="😮">😮</button>
+      </div>
+      <button type="button" id="btnActionReply" class="message-action-reply-btn">
+        <svg viewBox="0 0 24 24" class="action-reply-icon">
+          <path d="M10 9V5L3 12L10 19V14.9C15 14.9 18.5 16.5 21 20C20 15 17 10 10 9Z" fill="currentColor"/>
+        </svg>
+        <span>Ответить</span>
+      </button>
+    </div>
+  </div>
+
   <script type="module" src="js/app.js"></script>
 </body>
 </html>

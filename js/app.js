@@ -1,7 +1,7 @@
 /**
  * Sharada Messenger - Main Entry Point & Smooth Navigation
  */
-import { API_BASE } from './api.js';
+import { API_BASE, setCurrentUser } from './api.js';
 import { initAuth, checkSession } from './auth.js';
 import { loadChannels, initWebSocket, initChatEvents, setSwitchToChatsCallback } from './chats.js';
 import { initSearch } from './search.js';
@@ -84,6 +84,7 @@ export function switchAppView(viewName) {
       document.body.classList.remove('in-chat-mobile');
       setupSettingsUI();
     } else if (viewName === 'chats') {
+      document.body.classList.remove('in-settings-section-mobile');
       updateHeaderConnectionText();
     }
 
@@ -98,6 +99,7 @@ setSwitchToChatsCallback(() => switchAppView('chats'));
 
 function onAuthSuccess(user) {
   try {
+    if (user) setCurrentUser(user);
     const backdrop = document.getElementById('authBackdrop');
     if (backdrop) backdrop.classList.add('hidden');
     document.body.classList.remove('auth-mode');
