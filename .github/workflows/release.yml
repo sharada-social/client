@@ -160,6 +160,15 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Select Xcode 16
+        run: |
+          XCODE_16=$(ls -d /Applications/Xcode_16*.app 2>/dev/null | sort -V | tail -n 1)
+          if [ -n "$XCODE_16" ]; then
+            echo "Switching to $XCODE_16"
+            sudo xcode-select -s "$XCODE_16/Contents/Developer"
+          fi
+          xcodebuild -version
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -196,16 +205,15 @@ jobs:
             npx tauri ios init
           fi
 
-          echo "Compiling iOS app..."
-          npx tauri ios build --target aarch64-apple-ios --no-watch --ci || true
+          echo "Compiling iOS app with Tauri (--no-sign)..."
+          npx tauri ios build --target aarch64-apple-ios --ci --no-sign || true
 
           APP_FOUND=$(find src-tauri/gen/apple -name "*.app" 2>/dev/null | head -n 1)
           if [ -z "$APP_FOUND" ]; then
-            echo "Building with xcodebuild using unsigned xcconfig..."
+            echo "Running direct xcodebuild with unsigned configuration..."
             XCODEPROJ=$(find src-tauri/gen/apple -name "*.xcodeproj" | head -n 1)
-            SCHEME=$(xcodebuild -project "$XCODEPROJ" -list | grep -E "sharada|_iOS" | head -n 1 | tr -d ' ')
             xcodebuild -project "$XCODEPROJ" \
-              -scheme "$SCHEME" \
+              -scheme "sharada_iOS" \
               -configuration Release \
               -destination 'generic/platform=iOS' \
               -derivedDataPath build \
