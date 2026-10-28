@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "sharada",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "identifier": "com.sharada.app",
   "build": {
     "beforeBuildCommand": "node build.js",
@@ -30,7 +30,7 @@
     "targets": "all",
     "shortDescription": "нишевый приватный мессенджер✌️",
     "longDescription": "sharada - безопасный приватный мессенджер со сквозным шифрованием (E2EE), самоуничтожением сессий и локальным кэшированием.",
-    "category": "Chat",
+    "category": "SocialNetworking",
     "copyright": "Copyright 2026 Sharada Security Team odabebe 4o4 52 67",
     "icon": [
       "icons/32x32.png",

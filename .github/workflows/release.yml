@@ -103,11 +103,19 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Setup Android SDK and NDK
+      - name: Setup Android NDK
+        id: setup-ndk
         uses: nttld/setup-ndk@v1
         with:
           ndk-version: r26d
           link-to-sdk: true
+
+      - name: Configure Android environment
+        run: |
+          echo "ANDROID_HOME=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
+          echo "NDK_HOME=${{ steps.setup-ndk.outputs.ndk-path }}" >> $GITHUB_ENV
+          echo "ANDROID_NDK_HOME=${{ steps.setup-ndk.outputs.ndk-path }}" >> $GITHUB_ENV
+          echo "ANDROID_NDK_ROOT=${{ steps.setup-ndk.outputs.ndk-path }}" >> $GITHUB_ENV
 
       - name: Install Rust stable & Android targets
         uses: dtolnay/rust-toolchain@stable
@@ -121,16 +129,17 @@ jobs:
         run: node build.js
 
       - name: Build Android APK
-        env:
-          NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
         run: |
           npx tauri android build --apk
 
-      - name: Locate & Rename APK
+      - name: Locate & Collect APKs
         run: |
           mkdir -p output-apk
-          find src-tauri/gen/android -name "*.apk" -exec cp {} output-apk/sharada-android-release.apk \;
-          ls -la output-apk
+          find src-tauri/gen/android -name "*.apk" | while read -r apk; do
+            echo "Found APK: $apk"
+            cp "$apk" output-apk/sharada-android-release.apk
+          done
+          ls -la output-apk/
 
       - name: Upload APK to Release
         uses: softprops/action-gh-release@v2
@@ -138,5 +147,94 @@ jobs:
         with:
           tag_name: ${{ github.ref_name || inputs.tag_name }}
           files: output-apk/*.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # =============================================================
+  # 3. СБОРКА МОБИЛЬНОГО ПАКЕТА IOS (.ipa - Unsigned для AltStore/TrollStore)
+  # =============================================================
+  build-ios:
+    runs-on: macos-14
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Rust stable & iOS target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Build web assets
+        run: node build.js
+
+      - name: Setup Unsigned Build Config
+        run: |
+          cat << 'EOF' > unsigned.xcconfig
+          CODE_SIGNING_ALLOWED = NO
+          CODE_SIGNING_REQUIRED = NO
+          CODE_SIGN_IDENTITY =
+          EXPANDED_CODE_SIGN_IDENTITY =
+          PROVISIONING_PROFILE_SPECIFIER =
+          DEVELOPMENT_TEAM =
+          EOF
+          echo "XCODE_XCCONFIG_FILE=$(pwd)/unsigned.xcconfig" >> $GITHUB_ENV
+
+      - name: Initialize & Build iOS
+        run: |
+          if [ ! -d "src-tauri/gen/apple" ]; then
+            echo "Initializing iOS project..."
+            npx tauri ios init
+          fi
+
+          echo "Compiling iOS app..."
+          npx tauri ios build --target aarch64-apple-ios --no-watch --ci || true
+
+          APP_FOUND=$(find src-tauri/gen/apple -name "*.app" 2>/dev/null | head -n 1)
+          if [ -z "$APP_FOUND" ]; then
+            echo "Building with xcodebuild using unsigned xcconfig..."
+            XCODEPROJ=$(find src-tauri/gen/apple -name "*.xcodeproj" | head -n 1)
+            SCHEME=$(xcodebuild -project "$XCODEPROJ" -list | grep -E "sharada|_iOS" | head -n 1 | tr -d ' ')
+            xcodebuild -project "$XCODEPROJ" \
+              -scheme "$SCHEME" \
+              -configuration Release \
+              -destination 'generic/platform=iOS' \
+              -derivedDataPath build \
+              CODE_SIGNING_ALLOWED=NO \
+              CODE_SIGNING_REQUIRED=NO \
+              CODE_SIGN_IDENTITY="" \
+              PROVISIONING_PROFILE_SPECIFIER=""
+          fi
+
+      - name: Package Unsigned .ipa
+        run: |
+          mkdir -p output-ipa/Payload
+          APP_PATH=$(find . -name "*.app" -type d | grep -v "DerivedData" | head -n 1)
+          if [ -z "$APP_PATH" ]; then
+            APP_PATH=$(find . -name "*.app" -type d | head -n 1)
+          fi
+          echo "Using App: $APP_PATH"
+          cp -R "$APP_PATH" output-ipa/Payload/
+          cd output-ipa
+          zip -r sharada-ios-unsigned.ipa Payload
+          rm -rf Payload
+          cd ..
+          ls -la output-ipa/
+
+      - name: Upload IPA to Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/') || inputs.tag_name != ''
+        with:
+          tag_name: ${{ github.ref_name || inputs.tag_name }}
+          files: output-ipa/*.ipa
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

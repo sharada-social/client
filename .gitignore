@@ -8,6 +8,11 @@ yarn-error.log*
 dist/
 build/
 linux-bin/
+output-apk/
+output-ipa/
+*.apk
+*.ipa
+*.xcconfig
 
 # Rust / Tauri build artifacts
 src-tauri/target/
@@ -15,6 +20,8 @@ src-tauri/gen/schemas/
 src-tauri/gen/android/build/
 src-tauri/gen/android/app/build/
 src-tauri/gen/android/.gradle/
+src-tauri/gen/apple/build/
+src-tauri/gen/apple/DerivedData/
 *.bundle/
 
 # Deprecated / Scratch folders
