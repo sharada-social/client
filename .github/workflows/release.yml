@@ -206,27 +206,12 @@ jobs:
           fi
 
           echo "Compiling iOS app with Tauri (--no-sign)..."
-          npx tauri ios build --target aarch64-apple-ios --ci --no-sign || true
-
-          APP_FOUND=$(find src-tauri/gen/apple -name "*.app" 2>/dev/null | head -n 1)
-          if [ -z "$APP_FOUND" ]; then
-            echo "Running direct xcodebuild with unsigned configuration..."
-            XCODEPROJ=$(find src-tauri/gen/apple -name "*.xcodeproj" | head -n 1)
-            xcodebuild -project "$XCODEPROJ" \
-              -scheme "sharada_iOS" \
-              -configuration Release \
-              -destination 'generic/platform=iOS' \
-              -derivedDataPath build \
-              CODE_SIGNING_ALLOWED=NO \
-              CODE_SIGNING_REQUIRED=NO \
-              CODE_SIGN_IDENTITY="" \
-              PROVISIONING_PROFILE_SPECIFIER=""
-          fi
+          npx tauri ios build --target aarch64 --ci --no-sign
 
       - name: Package Unsigned .ipa
         run: |
           mkdir -p output-ipa/Payload
-          APP_PATH=$(find . -name "*.app" -type d | grep -v "DerivedData" | head -n 1)
+          APP_PATH=$(find src-tauri/gen/apple -name "*.app" -type d | head -n 1)
           if [ -z "$APP_PATH" ]; then
             APP_PATH=$(find . -name "*.app" -type d | head -n 1)
           fi
