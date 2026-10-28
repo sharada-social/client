@@ -1,0 +1,1501 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sharada — Приватная сеть</title>
+  <link rel="stylesheet" href="style.css?v=5.3.0">
+</head>
+<body>
+
+  <!-- Тотально черный фон с выплывающим снизу красным кругом и блюром -->
+  <div class="ambient-glow-wrapper" aria-hidden="true">
+    <div class="ambient-red-circle"></div>
+    <div class="ambient-blur-overlay"></div>
+  </div>
+
+  <!-- =======================================================
+       ЭКРАН ЗАГРУЗКИ (СПЛЭШ): ПОДКЛЮЧЕНИЕ -> СЕССИЯ -> СТРАНИЦА
+       ======================================================= -->
+  <div id="appSplashScreen" class="app-splash-screen">
+    <div class="splash-content">
+      <div class="splash-logo">
+        <svg viewBox="0 0 24 24"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11v8.8z"/></svg>
+      </div>
+      <div class="splash-brand">sharada</div>
+      <div class="splash-status">
+        <div class="splash-spinner"></div>
+        <span id="splashStatusText">Подключение к серверу...</span>
+      </div>
+    </div>
+  </div>
+  <script>
+    window.getSharadaServerHost = function() {
+      var custom = localStorage.getItem('sharada_server_host');
+      if (custom && custom.trim()) {
+        var host = custom.trim().replace(/^https?:\/\//, '').replace(/\/$/, '');
+        if (host.includes('shamper.ru')) {
+          host = host.replace(/:\d+$/, '');
+          localStorage.setItem('sharada_server_host', host);
+          return host;
+        }
+        if (host === '192.168.1.5:8080' || host === '192.168.1.7:8080') {
+          localStorage.setItem('sharada_server_host', 'out.shamper.ru');
+          return 'out.shamper.ru';
+        }
+        if (!host.includes(':') && (/^\d+\.\d+\.\d+\.\d+$/.test(host) || host === 'localhost')) {
+          host += ':8080';
+        }
+        return host;
+      }
+      var isTauri = window.location.hostname === 'tauri.localhost' || window.location.protocol === 'tauri:' || window.location.port !== '8080';
+      if (isTauri) {
+        return 'out.shamper.ru';
+      }
+      return window.location.host;
+    };
+
+    window.getSharadaProto = function(host) {
+      if (!host) host = window.getSharadaServerHost();
+      if (window.location.protocol === 'https:' || host.includes('out.shamper.ru') || (!host.includes('localhost') && !host.includes('127.0.0.1') && !host.startsWith('192.168.'))) {
+        return 'https://';
+      }
+      return 'http://';
+    };
+
+    window.promptChangeServerHost = function() {
+      var current = window.getSharadaServerHost();
+      var next = prompt('Адрес сервера Sharada (домен или IP:порт):\nНапример: out.shamper.ru', current);
+      if (next && next.trim()) {
+        var clean = next.trim().replace(/^https?:\/\//, '').replace(/\/$/, '');
+        if (clean.includes('shamper.ru')) {
+          clean = clean.replace(/:\d+$/, '');
+        } else if (!clean.includes(':') && (/^\d+\.\d+\.\d+\.\d+$/.test(clean) || clean === 'localhost')) {
+          clean += ':8080';
+        }
+        localStorage.setItem('sharada_server_host', clean);
+        location.reload();
+      }
+    };
+
+    // Гарантированное скрытие сплэша через 600мс в любом случае
+    setTimeout(function() {
+      var s = document.getElementById('appSplashScreen');
+      if (s) {
+        s.style.transition = 'opacity 0.3s ease';
+        s.style.opacity = '0';
+        setTimeout(function() { s.style.display = 'none'; }, 300);
+      }
+    }, 600);
+  </script>
+
+  <!-- =======================================================
+       ЭКРАН ВХОДА (Microsoft-style карточка по центру)
+       ======================================================= -->
+  <div id="authBackdrop" class="auth-backdrop hidden">
+    <!-- Тотально черный фон с выплывающим снизу красным кругом и блюром для экрана авторизации -->
+    <div class="auth-ambient-wrapper" aria-hidden="true">
+      <div class="ambient-red-circle"></div>
+      <div class="ambient-blur-overlay"></div>
+    </div>
+
+    <div class="auth-card" id="authCard">
+      
+      <!-- Шапка карточки -->
+      <div class="auth-header">
+        <div class="auth-logo">
+          <svg viewBox="0 0 24 24"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11v8.8z"/></svg>
+        </div>
+        <div>
+          <h2 class="auth-brand-name">sharada</h2>
+          <div class="auth-brand-desc">Закрытая приватная сеть</div>
+        </div>
+      </div>
+
+      <!-- Сообщение об ошибке -->
+      <div id="authErrorMsg" class="auth-error-msg"></div>
+
+      <!-- ШАГ 1: Ввод Username и Ключа (Обернут в <form> для автосохранения паролей в браузере) -->
+      <!-- ШАГ 1: Ввод Username и Ключа (Обернут в <form> для автосохранения паролей в браузере) -->
+      <form id="authStep1" class="auth-step" onsubmit="event.preventDefault(); window.sharadaSubmitStep1 && window.sharadaSubmitStep1(event); return false;" autocomplete="on">
+        <div class="auth-input-group">
+          <label class="auth-label" for="loginUsername">Имя пользователя</label>
+          <input type="text" id="loginUsername" name="username" class="auth-input" placeholder="например, admin или antonio" autocomplete="username" required onkeydown="if(event.key==='Enter'){event.preventDefault(); var p=document.getElementById('loginPassword'); if(p) p.focus();}">
+        </div>
+
+        <div class="auth-input-group">
+          <label class="auth-label" for="loginPassword">Ключ доступа (длинный пароль)</label>
+          <input type="password" id="loginPassword" name="password" class="auth-input" placeholder="Введите полученный ключ" autocomplete="current-password" required onkeydown="if(event.key==='Enter'){event.preventDefault(); window.sharadaSubmitStep1 && window.sharadaSubmitStep1(event);}">
+        </div>
+
+        <button type="button" id="btnStep1Next" class="auth-btn" onclick="window.sharadaSubmitStep1 && window.sharadaSubmitStep1(event)">
+          <span>Далее</span>
+          <svg style="width:18px; height:18px; fill:currentColor;" viewBox="0 0 24 24"><path d="M12 4l-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8z"/></svg>
+        </button>
+      </form>
+
+      <!-- ШАГ 2: Ввод TOTP кода (для активного аккаунта) -->
+      <form id="authStepTOTP" class="auth-step hidden-step" onsubmit="event.preventDefault(); window.sharadaSubmitStep2 && window.sharadaSubmitStep2(event); return false;">
+        <div style="font-size:14px; color:var(--text-muted); line-height:1.4;">
+          Вход под аккаунтом <b id="totpAccountLabel" style="color:#fff;"></b>. Введите одноразовый 6-значный код из приложения аутентификации:
+        </div>
+
+        <div class="auth-input-group">
+          <label class="auth-label" for="loginTotpCode">Код подтверждения (TOTP)</label>
+          <input type="text" id="loginTotpCode" name="totp_code" class="auth-input" placeholder="000 000" maxlength="6" style="text-align:center; font-size:24px; letter-spacing:6px;" autocomplete="one-time-code" onkeydown="if(event.key==='Enter'){event.preventDefault(); window.sharadaSubmitStep2 && window.sharadaSubmitStep2(event);}" required>
+        </div>
+
+        <button type="button" id="btnStep2Login" class="auth-btn" onclick="window.sharadaSubmitStep2 && window.sharadaSubmitStep2(event)">
+          <span>Войти в сеть</span>
+        </button>
+
+        <button type="button" id="btnBackToStep1" class="auth-btn-secondary" onclick="window.sharadaBackToStep1 && window.sharadaBackToStep1(event)">
+          &larr; Назад (сменить пользователя)
+        </button>
+      </form>
+
+      <!-- ШАГ 3: Первичная привязка 2FA (для PENDING_2FA) -->
+      <form id="authStepSetup2FA" class="auth-step hidden-step" onsubmit="event.preventDefault(); window.sharadaSubmitStep3 && window.sharadaSubmitStep3(event); return false;" style="text-align:center;">
+        <div style="font-size:13px; color:#f59e0b; font-weight:700;">
+          Статус: PENDING_2FA. У вас есть 24 часа на завершение настройки, иначе учетная запись будет уничтожена!
+        </div>
+
+        <div style="margin:12px auto; background:#fff; padding:12px; border-radius:18px; display:inline-block;">
+          <img id="totpQrImg" src="" alt="TOTP QR" style="width:180px; height:180px; display:block;">
+        </div>
+
+        <div style="font-size:12px; color:var(--text-muted); font-weight:700;">
+          Секретный ключ для ручного ввода:
+          <code id="totpSecretText" style="display:block; margin-top:4px; font-size:13px; color:#c084fc; word-break:break-all; user-select:all;"></code>
+        </div>
+
+        <div class="auth-input-group" style="margin-top:6px;">
+          <input type="text" id="setupTotpInput" name="setup_totp_code" class="auth-input" placeholder="000000" maxlength="6" style="text-align:center; font-size:20px; letter-spacing:4px;" autocomplete="one-time-code" onkeydown="if(event.key==='Enter'){event.preventDefault(); window.sharadaSubmitStep3 && window.sharadaSubmitStep3(event);}" required>
+        </div>
+
+        <button type="button" id="btnConfirm2FASetup" class="auth-btn" style="width:100%;" onclick="window.sharadaSubmitStep3 && window.sharadaSubmitStep3(event)">
+          Подтвердить и активировать
+        </button>
+      </form>
+
+      <div style="margin-top:14px; text-align:center; font-size:12px; color:var(--text-muted);">
+        <span>Сервер: </span>
+        <a href="javascript:void(0)" onclick="window.promptChangeServerHost()" id="authServerHostLink" style="color:var(--primary-red-accent); font-family:monospace; text-decoration:underline;" title="Нажмите, чтобы изменить адрес сервера">out.shamper.ru</a>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- =======================================================
+       ПОЛНОЭКРАННЫЙ NFC ЭКРАН (ЧИСТЕЙШИЙ ЧЕРНЫЙ 0, 0, 0)
+       ======================================================= -->
+  <div id="nfcFullscreenScreen" class="nfc-fullscreen-view hidden">
+    <!-- Кнопка выхода слева вверху -->
+    <button id="btnCloseNFCFullscreen" class="nfc-close-btn" title="Вернуться к чатам">
+      <svg style="width:20px; height:20px; fill:currentColor;" viewBox="0 0 24 24"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
+    </button>
+
+    <!-- Белый заголовок -->
+    <div class="nfc-title">
+      Приложите своё устройство NFC чипом к другому устройству<br>
+      <span style="font-size:14px; color:#888; font-weight:600;">(на этом устройстве должен быть открытым такой же экран)</span>
+    </div>
+
+    <!-- Прямоугольник по центру с логотипом NFC и радио-дугами -->
+    <div class="nfc-center-stage">
+      <div class="nfc-wave"></div>
+      <div class="nfc-wave"></div>
+      <div class="nfc-wave"></div>
+
+      <div class="nfc-phone-box">
+        <svg class="nfc-logo-icon" viewBox="0 0 24 24">
+          <path d="M20 2H4c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM4 20V4h16v16H4zm14-4v-2c0-1.1-.9-2-2-2h-3v-2h3c2.21 0 4 1.79 4 4v2h-2zm-6-8h2v2h-2v2h2v2h-4V8h2zm-2 6H6v-2c0-2.21 1.79-4 4-4v2c-1.1 0-2 .9-2 2v2z"/>
+        </svg>
+      </div>
+    </div>
+
+    <!-- Текст в самом низу -->
+    <div class="nfc-bottom-note">
+      Чехлы, банковские карты или банковские стикеры могут помешать спариванию устройств!
+    </div>
+  </div>
+
+  <!-- =======================================================
+       ГЛАВНЫЙ ИНТЕРФЕЙС ПРИВАТНОГО МЕССЕНДЖЕРА
+       ======================================================= -->
+  <div class="app-frame">
+    <div class="screen-container">
+      
+      <!-- СТРАНИЦА 1: ЧАТЫ -->
+      <div id="viewChats" class="app-page-view active">
+        <!-- Сайдбар чатов -->
+        <aside class="sidebar" id="chatSidebar">
+          <div class="sidebar-header">
+            <div class="sidebar-title">
+              <span id="sidebarUsername" class="header-animated-title">username</span>
+            </div>
+            <button id="btnOpenNewChatModal" class="icon-btn" title="Новое сообщение">
+              <svg viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+            </button>
+          </div>
+
+          <!-- Поиск чатов -->
+          <div class="search-box">
+            <svg viewBox="0 0 45.667 45.667" fill="currentColor">
+              <path d="M44.188,37.125l-8.623-8.52c-0.869,1.396-1.903,2.705-3.098,3.896c-1.205,1.206-2.527,2.251-3.939,3.126l8.673,8.569c1.944,1.923,5.071,1.906,7.004-0.024c0.008-0.008,0.015-0.015,0.022-0.021C46.167,42.21,46.141,39.055,44.188,37.125z"/>
+              <path d="M34.385,17.229c0-9.48-7.712-17.192-17.193-17.192c-4.739-0.001-9.037,1.928-12.15,5.041C1.929,8.191,0,12.489,0,17.229c0.001,9.479,7.713,17.192,17.192,17.192c4.74,0,9.039-1.928,12.151-5.042C32.457,26.266,34.385,21.969,34.385,17.229z M24.659,24.695c-1.913,1.912-4.555,3.098-7.466,3.098c-5.825,0-10.564-4.738-10.564-10.564c0-2.912,1.185-5.553,3.098-7.466c1.912-1.913,4.554-3.097,7.467-3.098c5.823,0,10.563,4.739,10.563,10.563C27.757,20.141,26.572,22.782,24.659,24.695z"/>
+            </svg>
+            <input type="text" id="searchInput" placeholder="Поиск чатов и контактов">
+          </div>
+
+          <!-- Список диалогов -->
+          <div class="chat-list" id="chatList"></div>
+        </aside>
+
+        <!-- Правая область: Окно чата -->
+        <main class="main-content" id="chatMainContent">
+          <!-- Пустой экран: Выберите чат -->
+          <div class="empty-state" id="emptyChatState">
+            <div class="empty-state-icon">
+              <svg viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-1.99.9-1.99 2L2 22l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM6 9h12v2H6V9zm8 5H6v-2h8v2zm4-6H6V6h12v2z"/></svg>
+            </div>
+            <h3 class="empty-state-title">Выберите чат для общения</h3>
+            <p class="empty-state-desc">Все сообщения передаются по защищенному каналу со сквозным шифрованием.</p>
+          </div>
+
+          <!-- Активное окно чата -->
+          <div id="activeChatWindow" style="display:none; flex:1; flex-direction:column; height:100%; position:relative;">
+            <div class="chat-window-header">
+              <div class="chat-header-user">
+                <!-- Кнопка назад для мобилки (как в Telegram) -->
+                <button id="btnBackToSidebarMobile" class="chat-back-mobile-btn" title="Назад к чатам">
+                  <svg style="width:24px; height:24px;" viewBox="0 0 24 24" fill="none"><path d="M20 11.25C20.4142 11.25 20.75 11.5858 20.75 12C20.75 12.4142 20.4142 12.75 20 12.75H10.75L10.75 18C10.75 18.3034 10.5673 18.5768 10.287 18.6929C10.0068 18.809 9.68417 18.7449 9.46967 18.5304L3.46967 12.5304C3.32902 12.3897 3.25 12.1989 3.25 12C3.25 11.8011 3.32902 11.6103 3.46967 11.4697L9.46967 5.46969C9.68417 5.25519 10.0068 5.19103 10.287 5.30711C10.5673 5.4232 10.75 5.69668 10.75 6.00002L10.75 11.25H20Z" fill="currentColor"/></svg>
+                </button>
+                <div class="avatar" id="activeChatAvatar">A</div>
+                <div>
+                  <div class="chat-header-name">
+                    <span id="activeChatTitle">antonio</span>
+                    <span id="activeChatE2EE" class="badge badge-e2ee" style="display:none;">E2EE</span>
+                  </div>
+                  <div class="chat-header-status" id="activeChatSubtitle">
+                    <span class="online-badge-dot" id="activeChatOnlineDot"></span>
+                    <span id="activeChatStatusText">в сети</span>
+                  </div>
+                </div>
+              </div>
+              <div class="chat-header-actions" style="display:flex; align-items:center; gap:8px;">
+                <button id="btnStartCall" class="icon-btn" title="Аудиозвонок" style="color:var(--text-muted);">
+                  <svg viewBox="0 0 24 24" style="width:20px; height:20px;" fill="none">
+                    <path d="M10.0376 5.31617L10.6866 6.4791C11.2723 7.52858 11.0372 8.90532 10.1147 9.8278C10.1147 9.8278 10.1147 9.8278 10.1147 9.8278C10.1146 9.82792 8.99588 10.9468 11.0245 12.9755C13.0525 15.0035 14.1714 13.8861 14.1722 13.8853C14.1722 13.8853 14.1722 13.8853 14.1722 13.8853C15.0947 12.9628 16.4714 12.7277 17.5209 13.3134L18.6838 13.9624C20.2686 14.8468 20.4557 17.0692 19.0628 18.4622C18.2258 19.2992 17.2004 19.9505 16.0669 19.9934C14.1588 20.0658 10.9183 19.5829 7.6677 16.3323C4.41713 13.0817 3.93421 9.84122 4.00655 7.93309C4.04952 6.7996 4.7008 5.77423 5.53781 4.93723C6.93076 3.54428 9.15317 3.73144 10.0376 5.31617Z" fill="currentColor"/>
+                    <path d="M13.2595 1.87983C13.3257 1.47094 13.7122 1.19357 14.1211 1.25976C14.1464 1.26461 14.2279 1.27983 14.2705 1.28933C14.3559 1.30834 14.4749 1.33759 14.6233 1.38082C14.9201 1.46726 15.3347 1.60967 15.8323 1.8378C16.8286 2.29456 18.1544 3.09356 19.5302 4.46936C20.906 5.84516 21.705 7.17097 22.1617 8.16725C22.3899 8.66487 22.5323 9.07947 22.6187 9.37625C22.6619 9.52466 22.6912 9.64369 22.7102 9.72901C22.7197 9.77168 22.7267 9.80594 22.7315 9.83125L22.7373 9.86245C22.8034 10.2713 22.5286 10.6739 22.1197 10.7401C21.712 10.8061 21.3279 10.53 21.2601 10.1231C21.258 10.1121 21.2522 10.0828 21.2461 10.0551C21.2337 9.9997 21.2124 9.91188 21.1786 9.79572C21.1109 9.56339 20.9934 9.21806 20.7982 8.79238C20.4084 7.94207 19.7074 6.76789 18.4695 5.53002C17.2317 4.29216 16.0575 3.59117 15.2072 3.20134C14.7815 3.00618 14.4362 2.88865 14.2038 2.82097C14.0877 2.78714 13.9417 2.75363 13.8863 2.7413C13.4793 2.67347 13.1935 2.28755 13.2595 1.87983Z" fill="currentColor"/>
+                  </svg>
+                </button>
+                <button id="btnDeleteCurrentChat" class="icon-btn" title="Удалить чат" style="display:none; color:#ef4444;">
+                  <svg viewBox="0 0 24 24" fill="none">
+                    <path d="M2.75 6.16667C2.75 5.70644 3.09538 5.33335 3.52143 5.33335L6.18567 5.3329C6.71502 5.31841 7.18202 4.95482 7.36214 4.41691C7.36688 4.40277 7.37232 4.38532 7.39185 4.32203L7.50665 3.94993C7.5769 3.72179 7.6381 3.52303 7.72375 3.34536C8.06209 2.64349 8.68808 2.1561 9.41147 2.03132C9.59457 1.99973 9.78848 1.99987 10.0111 2.00002H13.4891C13.7117 1.99987 13.9056 1.99973 14.0887 2.03132C14.8121 2.1561 15.4381 2.64349 15.7764 3.34536C15.8621 3.52303 15.9233 3.72179 15.9935 3.94993L16.1083 4.32203C16.1279 4.38532 16.1333 4.40277 16.138 4.41691C16.3182 4.95482 16.8778 5.31886 17.4071 5.33335H19.9786C20.4046 5.33335 20.75 5.70644 20.75 6.16667C20.75 6.62691 20.4046 7 19.9786 7H3.52143C3.09538 7 2.75 6.62691 2.75 6.16667Z" fill="currentColor"/>
+                    <path d="M11.6068 21.9998H12.3937C15.1012 21.9998 16.4549 21.9998 17.3351 21.1366C18.2153 20.2734 18.3054 18.8575 18.4855 16.0256L18.745 11.945C18.8427 10.4085 18.8916 9.6402 18.45 9.15335C18.0084 8.6665 17.2628 8.6665 15.7714 8.6665H8.22905C6.73771 8.6665 5.99204 8.6665 5.55047 9.15335C5.10891 9.6402 5.15777 10.4085 5.25549 11.945L5.515 16.0256C5.6951 18.8575 5.78515 20.2734 6.66534 21.1366C7.54553 21.9998 8.89927 21.9998 11.6068 21.9998Z" fill="currentColor"/>
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            <!-- Список сообщений -->
+            <div class="messages-container" id="messagesContainer"></div>
+
+            <!-- Всплывающий стек отдельных облачков печатания (по типам действий) -->
+            <div id="chatTypingContainer" class="chat-typing-container"></div>
+
+            <!-- Поле ввода сообщения -->
+            <div class="message-input-area">
+              <div class="input-capsule">
+                <button type="button" id="btnAttachFile" class="icon-btn" title="Прикрепить файл" style="margin-right:6px; color:var(--text-muted); display:inline-flex; align-items:center; justify-content:center;">
+                  <svg viewBox="0 0 24 24" style="width:20px; height:20px;" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+                    <path d="M7.9175 17.8068L15.8084 10.2535C16.7558 9.34668 16.7558 7.87637 15.8084 6.96951C14.861 6.06265 13.325 6.06265 12.3776 6.96951L4.54387 14.4681C2.74382 16.1911 2.74382 18.9847 4.54387 20.7077C6.34391 22.4308 9.26237 22.4308 11.0624 20.7077L19.0105 13.0997C21.6632 10.5605 21.6632 6.44362 19.0105 3.90441C16.3578 1.3652 12.0569 1.3652 9.40419 3.90441L3 10.0346"/>
+                  </svg>
+                </button>
+                <input type="text" id="messageInput" placeholder="Напишите сообщение..." autocomplete="off">
+                <button id="btnSendMessage" class="send-btn" title="Отправить">
+                  <svg viewBox="0 0 24 24" fill="none"><path d="M4.49746 20.835L21.0072 13.4725C22.3309 12.8822 22.3309 11.1178 21.0072 10.5275L4.49746 3.16496C3.00163 2.49789 1.45006 3.97914 2.19099 5.36689L5.34302 11.2706C5.58817 11.7298 5.58818 12.2702 5.34302 12.7294L2.19099 18.6331C1.45007 20.0209 3.00163 21.5021 4.49746 20.835Z" fill="currentColor"/></svg>
+                </button>
+              </div>
+            </div>
+          </div>
+        </main>
+      </div>
+
+      <!-- СТРАНИЦА 2: НАСТРОЙКИ (ДВЕ КОЛОНКИ: РАЗДЕЛЫ СЛЕВА, КОНТЕНТ СПРАВА) -->
+      <div id="viewSettings" class="app-page-view">
+        <!-- Левая колонка: Список разделов настроек -->
+        <aside class="sidebar settings-sidebar">
+          <div class="sidebar-header">
+            <div class="sidebar-title">
+              <span>Настройки</span>
+            </div>
+          </div>
+
+          <!-- Разделы настроек: Аккаунт и Администрирование (только для админа) -->
+            <div class="settings-nav-list">
+              <div class="settings-nav-item active" data-section="account" id="settingsNavAccount">
+                <div class="settings-nav-icon">
+                  <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="6" r="4" fill="currentColor"/><ellipse cx="12" cy="17" rx="7" ry="4" fill="currentColor"/></svg>
+                </div>
+                <span>Аккаунт</span>
+                <span class="settings-nav-subbadge" id="settingsNavSubbadge">Жизненный цикл</span>
+              </div>
+
+              <!-- Раздел "Конфиденциальность и Безопасность" -->
+              <div class="settings-nav-item" data-section="privacy" id="settingsNavPrivacy">
+                <div class="settings-nav-icon">
+                  <svg viewBox="0 0 24 24" fill="none"><path fill-rule="evenodd" clip-rule="evenodd" d="M3.37752 5.08241C3 5.62028 3 7.21907 3 10.4167V11.9914C3 17.6294 7.23896 20.3655 9.89856 21.5273C10.62 21.8424 10.9807 22 12 22C13.0193 22 13.38 21.8424 14.1014 21.5273C16.761 20.3655 21 17.6294 21 11.9914V10.4167C21 7.21907 21 5.62028 20.6225 5.08241C20.245 4.54454 18.7417 4.02996 15.7351 3.00079L15.1623 2.80472C13.595 2.26824 12.8114 2 12 2C11.8114 2 10.405 2.26824 8.83772 2.80472L8.26491 3.00079C5.25832 4.02996 3.75503 4.54454 3.37752 5.08241ZM13.5 15C13.5 15.5523 13.0523 16 12.5 16H11.5C10.9477 16 10.5 15.5523 10.5 15V13.5987C9.6033 13.0799 9 12.1104 9 11C9 9.34315 10.3431 8 12 8C13.6569 8 15 9.34315 15 11C15 12.1104 14.3967 13.0799 13.5 13.5987V15Z" fill="currentColor"/></svg>
+                </div>
+                <span>Конфиденциальность</span>
+              </div>
+
+              <div class="settings-nav-item" data-section="devices" id="settingsNavDevices">
+                <div class="settings-nav-icon">
+                  <svg viewBox="0 0 24 24" fill="none">
+                    <path d="M2 14.5C2 13.0955 2 12.3933 2.33706 11.8889C2.48298 11.6705 2.67048 11.483 2.88886 11.3371C3.39331 11 4.09554 11 5.5 11C6.90446 11 7.60669 11 8.11114 11.3371C8.32952 11.483 8.51702 11.6705 8.66294 11.8889C9 12.3933 9 13.0955 9 14.5V18.5C9 19.9045 9 20.6067 8.66294 21.1111C8.51702 21.3295 8.32952 21.517 8.11114 21.6629C7.60669 22 6.90446 22 5.5 22C4.09554 22 3.39331 22 2.88886 21.6629C2.67048 21.517 2.48298 21.3295 2.33706 21.1111C2 20.6067 2 19.9045 2 18.5V14.5Z" fill="currentColor"/>
+                    <path fill-rule="evenodd" clip-rule="evenodd" d="M22 10V14C22 17.7712 22 19.6569 20.8284 20.8284C19.6569 22 17.7712 22 14 22C12.3009 22 10.9846 22 9.94386 21.8929C10.2787 21.368 10.3977 20.8107 10.4502 20.2949C10.5001 19.8039 10.5001 19.2114 10.5 18.566L10.5 18.5V14.5L10.5 14.434C10.5001 13.7886 10.5001 13.1961 10.4502 12.7051C10.396 12.1723 10.2708 11.5953 9.91014 11.0555C9.65479 10.6733 9.32666 10.3452 8.9445 10.0899C8.40473 9.72919 7.82766 9.60403 7.29488 9.54983C6.91621 9.51131 6.47721 9.50253 6.00011 9.50056C6.00239 6.05993 6.0529 4.29024 7.17157 3.17157C8.34315 2 10.2288 2 14 2C17.7712 2 19.6569 2 20.8284 3.17157C22 4.34315 22 6.22876 22 10ZM11.25 19C11.25 18.5858 11.5858 18.25 12 18.25H17C17.4142 18.25 17.75 18.5858 17.75 19C17.75 19.4142 17.4142 19.75 17 19.75H12C11.5858 19.75 11.25 19.4142 11.25 19Z" fill="currentColor"/>
+                  </svg>
+                </div>
+                <span>Устройства</span>
+              </div>
+
+              <!-- Раздел "Память и кэш" -->
+              <div class="settings-nav-item" data-section="storage" id="settingsNavStorage">
+                <div class="settings-nav-icon">
+                  <svg viewBox="0 0 24 24" fill="none">
+                    <path d="M6.4443 3.6853C6.97115 3.33327 7.52766 3.03383 8.10577 2.7894C9.50868 2.19627 10.2101 1.8997 11.1051 2.49296C12 3.08623 12 4.05748 12 6V8C12 9.88561 12 10.8284 12.5858 11.4142C13.1716 12 14.1144 12 16 12H18C19.9425 12 20.9138 12 21.507 12.8949C22.1003 13.7899 21.8037 14.4913 21.2106 15.8942C20.9662 16.4723 20.6667 17.0288 20.3147 17.5557C19.2159 19.2002 17.6541 20.4819 15.8268 21.2388C13.9996 21.9957 11.9889 22.1937 10.0491 21.8078C8.10929 21.422 6.32746 20.4696 4.92894 19.0711C3.53041 17.6725 2.578 15.8907 2.19215 13.9509C1.8063 12.0111 2.00433 10.0004 2.76121 8.17316C3.51809 6.3459 4.79981 4.78412 6.4443 3.6853Z" fill="currentColor"/>
+                    <path fill-rule="evenodd" clip-rule="evenodd" d="M13.7739 2.12812C13.8771 1.72698 14.286 1.48549 14.6871 1.58873C18.4658 2.56129 21.4389 5.53443 22.4115 9.31307C22.5147 9.71421 22.2732 10.1231 21.8721 10.2263C21.4709 10.3296 21.0621 10.0881 20.9588 9.68696C20.1225 6.43757 17.5626 3.87772 14.3132 3.04139C13.9121 2.93814 13.6706 2.52926 13.7739 2.12812Z" fill="currentColor"/>
+                  </svg>
+                </div>
+                <span>Память и кэш</span>
+              </div>
+
+              <div class="settings-nav-item" data-section="admin" id="settingsNavAdmin" style="display:none;">
+                <div class="settings-nav-icon">
+                  <svg viewBox="0 0 24 24" fill="none">
+                    <path d="M11.25 2.07324C10.6437 2.18634 9.93159 2.43011 8.83772 2.80454L8.26491 3.00062C5.25832 4.02978 3.75503 4.54436 3.37752 5.08223C3.00825 5.60836 3.00018 7.14957 3 10.2093L11.25 7.45925V2.07324Z" fill="currentColor"/>
+                    <path d="M11.25 9.04039L3 11.7904V11.9912C3 17.6293 7.23896 20.3653 9.89856 21.5271C10.4093 21.7502 10.7392 21.8943 11.25 21.9595V9.04039Z" fill="currentColor"/>
+                    <path d="M12.75 21.9595V9.04039L21 11.7904V11.9912C21 17.6293 16.761 20.3653 14.1014 21.5271C13.5907 21.7502 13.2608 21.8943 12.75 21.9595Z" fill="currentColor"/>
+                    <path d="M12.75 7.45925V2.07324C13.3563 2.18634 14.0684 2.43011 15.1623 2.80454L15.7351 3.00062C18.7417 4.02978 20.245 4.54436 20.6225 5.08223C20.9918 5.60836 20.9998 7.14957 21 10.2093L12.75 7.45925Z" fill="currentColor"/>
+                  </svg>
+                </div>
+                <span>Администрирование</span>
+              </div>
+
+              <!-- Раздел "Для разработчиков" (активируется после 5 кликов на версию) -->
+              <div class="settings-nav-item" data-section="developer" id="settingsNavDeveloper" style="display:none;">
+                <div class="settings-nav-icon">
+                  <svg viewBox="0 0 24 24" fill="none">
+                    <path d="M14.1809 4.2755C14.581 4.3827 14.8185 4.79396 14.7113 5.19406L10.7377 20.0238C10.6304 20.4239 10.2192 20.6613 9.81909 20.5541C9.41899 20.4469 9.18156 20.0356 9.28876 19.6355L13.2624 4.80583C13.3696 4.40573 13.7808 4.16829 14.1809 4.2755Z" fill="currentColor"/>
+                    <path d="M16.4425 7.32781C16.7196 7.01993 17.1938 6.99497 17.5017 7.27206L19.2392 8.8358C19.9756 9.49847 20.5864 10.0482 21.0058 10.5467C21.4468 11.071 21.7603 11.6342 21.7603 12.3295C21.7603 13.0248 21.4468 13.5881 21.0058 14.1123C20.5864 14.6109 19.9756 15.1606 19.2392 15.8233L17.5017 17.387C17.1938 17.6641 16.7196 17.6391 16.4425 17.3313C16.1654 17.0234 16.1904 16.5492 16.4983 16.2721L18.1947 14.7452C18.9826 14.0362 19.5138 13.5558 19.8579 13.1467C20.1882 12.7541 20.2603 12.525 20.2603 12.3295C20.2603 12.1341 20.1882 11.9049 19.8579 11.5123C19.5138 11.1033 18.9826 10.6229 18.1947 9.91383L16.4983 8.387C16.1904 8.10991 16.1654 7.63569 16.4425 7.32781Z" fill="currentColor"/>
+                    <path d="M7.50178 8.387C7.80966 8.10991 7.83462 7.63569 7.55752 7.32781C7.28043 7.01993 6.80621 6.99497 6.49833 7.27206L4.76084 8.8358C4.0245 9.49847 3.41369 10.0482 2.99428 10.5467C2.55325 11.071 2.23975 11.6342 2.23975 12.3295C2.23975 13.0248 2.55325 13.5881 2.99428 14.1123C3.41369 14.6109 4.02449 15.1606 4.76082 15.8232L6.49833 17.387C6.80621 17.6641 7.28043 17.6391 7.55752 17.3313C7.83462 17.0234 7.80966 16.5492 7.50178 16.2721L5.80531 14.7452C5.01743 14.0362 4.48623 13.5558 4.14213 13.1467C3.81188 12.7541 3.73975 12.525 3.73975 12.3295C3.73975 12.1341 3.81188 11.9049 4.14213 11.5123C4.48623 11.1033 5.01743 10.6229 5.80531 9.91383L7.50178 8.387Z" fill="currentColor"/>
+                  </svg>
+                </div>
+                <span>Для разработчиков</span>
+              </div>
+            </div>
+
+            <!-- Футер настроек: Название и версия (триггер 5 кликов для разработчиков) -->
+            <div class="settings-sidebar-footer" id="settingsDevTrigger" title="Нажмите 5 раз для режима разработчика">
+              <div class="settings-brand-text">sharada</div>
+              <div class="settings-version-text">v1.1.0 (Release)</div>
+              <div id="devStepsRemaining" class="dev-steps-pill" style="display:none;"></div>
+            </div>
+          </aside>
+
+          <!-- Правая колонка настроек: Контент активного раздела -->
+          <main class="settings-content-area">
+            <!-- РАЗДЕЛ 1: АККАУНТ -->
+            <div id="settingsSectionAccount" class="settings-tab-pane">
+              <div class="settings-panel-header">
+                <h1 class="panel-title">Аккаунт</h1>
+              </div>
+
+              <!-- 1. Профиль и бейджи -->
+              <div class="settings-section">
+                <div class="settings-section-title">Данные профиля</div>
+                <div class="settings-group" style="padding:16px; display:flex; flex-direction:column; gap:14px;">
+                  <div style="display:flex; gap:16px; align-items:center;">
+                    <div class="avatar" id="settingsProfileAvatar" style="width:64px; height:64px; font-size:24px;">A</div>
+                    <div style="flex:1;">
+                      <div class="auth-input-group" style="margin-bottom:8px;">
+                        <label class="auth-label" for="settingsDisplayNameInput">Отображаемое имя</label>
+                        <input type="text" id="settingsDisplayNameInput" class="auth-input" placeholder="Ваше публичное имя">
+                      </div>
+                      <div class="auth-input-group">
+                        <label class="auth-label" for="settingsUsernameInput">Имя пользователя (username)</label>
+                        <input type="text" id="settingsUsernameInput" class="auth-input" placeholder="@username">
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="auth-input-group">
+                    <label class="auth-label" for="settingsBioInput">О себе (Bio)</label>
+                    <textarea id="settingsBioInput" class="auth-input" style="min-height:64px; resize:vertical;" placeholder="Расскажите о себе..."></textarea>
+                  </div>
+
+                  <div class="auth-input-group">
+                    <label class="auth-label" for="settingsBirthDateInput">Дата рождения</label>
+                    <input type="date" id="settingsBirthDateInput" class="auth-input" style="color-scheme:dark;">
+                  </div>
+
+                  <div style="display:flex; justify-content:space-between; align-items:center; margin-top:4px;">
+                    <div id="settingsProfileSaveStatus" style="font-size:13px; color:#10b981; font-weight:600;"></div>
+                    <button type="button" id="btnSaveAccountProfile" class="btn-primary" style="padding:8px 20px;">Сохранить изменения</button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Бейджи ролей и статус доверия -->
+              <div class="settings-section">
+                <div class="settings-section-title">Бейджи и уровень привилегий</div>
+                <div class="settings-group" style="padding:14px;">
+                  <div id="settingsBadgesContainer" style="display:flex; flex-wrap:wrap; gap:8px;">
+                    <!-- Динамические чипы ролей -->
+                  </div>
+                  <div style="margin-top:10px; font-size:12px; color:var(--text-muted);" id="settingsTrustDisplay">
+                    Уровень доверия: force_trusted (2)
+                  </div>
+                </div>
+              </div>
+
+              <!-- 2. Жизненный цикл аккаунта -->
+              <div class="settings-section">
+                <div class="settings-section-title">Жизненный цикл аккаунта</div>
+                <div class="settings-group">
+                  <div class="settings-row" id="rowAccountLifecycle" style="cursor:pointer;">
+                    <div class="settings-row-left">
+                      <div class="tg-icon-box" style="background: #222; border:1px solid rgba(186,17,17,0.4);">
+                        <svg viewBox="0 0 24 24" fill="none"><path d="M22 12C22 17.5228 17.5228 22 12 22C6.47715 22 2 17.5228 2 12C2 6.47715 6.47715 2 12 2C17.5228 2 22 6.47715 22 12Z" fill="currentColor"/><path fill-rule="evenodd" clip-rule="evenodd" d="M12 7.25C12.4142 7.25 12.75 7.58579 12.75 8V11.6893L15.0303 13.9697C15.3232 14.2626 15.3232 14.7374 15.0303 15.0303C14.7374 15.3232 14.2626 15.3232 13.9697 15.0303L11.4697 12.5303C11.329 12.3897 11.25 12.1989 11.25 12V8C11.25 7.58579 11.5858 7.25 12 7.25Z" fill="#141414"/></svg>
+                      </div>
+                      <div class="settings-row-info">
+                        <div class="settings-row-title">Жизненный цикл аккаунта</div>
+                      </div>
+                    </div>
+                    <div class="settings-row-right" style="display:flex; align-items:center; gap:8px;">
+                      <span class="settings-value-preview" id="previewLifecycle" style="color:var(--primary-red-accent); font-weight:700; font-size:14px;">1 месяц · Удаление</span>
+                      <svg style="width:18px; height:18px; fill:var(--text-muted);" viewBox="0 0 24 24"><path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z"/></svg>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 3. Действия с аккаунтом -->
+              <div class="settings-section">
+                <div class="settings-section-title" style="color:#ef4444;">Действия с аккаунтом</div>
+                <div class="settings-group" style="border-color:rgba(239, 68, 68, 0.3);">
+                  <div class="settings-row" id="btnLogoutSettings" style="cursor:pointer;">
+                    <div class="settings-row-left">
+                      <div class="tg-icon-box" style="background: var(--grad-red);">
+                        <svg viewBox="0 0 24 24" fill="none"><path fill-rule="evenodd" clip-rule="evenodd" d="M16.125 12C16.125 11.5858 15.7892 11.25 15.375 11.25L4.40244 11.25L6.36309 9.56944C6.67759 9.29988 6.71401 8.8264 6.44444 8.51191C6.17488 8.19741 5.7014 8.16099 5.38691 8.43056L1.88691 11.4306C1.72067 11.573 1.625 11.7811 1.625 12C1.625 12.2189 1.72067 12.427 1.88691 12.5694L5.38691 15.5694C5.7014 15.839 6.17488 15.8026 6.44444 15.4881C6.71401 15.1736 6.67759 14.7001 6.36309 14.4306L4.40244 12.75L15.375 12.75C15.7892 12.75 16.125 12.4142 16.125 12Z" fill="currentColor"/><path d="M9.375 8C9.375 8.70219 9.375 9.05329 9.54351 9.3055C9.61648 9.41471 9.71025 9.50848 9.81946 9.58145C10.0717 9.74996 10.4228 9.74996 11.125 9.74996L15.375 9.74996C16.6176 9.74996 17.625 10.7573 17.625 12C17.625 13.2426 16.6176 14.25 15.375 14.25L11.125 14.25C10.4228 14.25 10.0716 14.25 9.8194 14.4185C9.71023 14.4915 9.6165 14.5852 9.54355 14.6944C9.375 14.9466 9.375 15.2977 9.375 16C9.375 18.8284 9.375 20.2426 10.2537 21.1213C11.1324 22 12.5464 22 15.3748 22L16.3748 22C19.2032 22 20.6174 22 21.4961 21.1213C22.3748 20.2426 22.3748 18.8284 22.3748 16L22.3748 8C22.3748 5.17158 22.3748 3.75736 21.4961 2.87868C20.6174 2 19.2032 2 16.3748 2L15.3748 2C12.5464 2 11.1324 2 10.2537 2.87868C9.375 3.75736 9.375 5.17157 9.375 8Z" fill="currentColor"/></svg>
+                      </div>
+                      <div class="settings-row-info">
+                        <div class="settings-row-title" style="color:#ef4444;">Выйти из учетной записи</div>
+                        <div class="settings-row-desc">Завершить текущую сессию на этом устройстве</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="settings-row" id="btnTriggerManualDelete" style="cursor:pointer;">
+                    <div class="settings-row-left">
+                      <div class="tg-icon-box" style="background: #3f1111;">
+                        <svg viewBox="0 0 24 24" fill="none"><path d="M2.75 6.16667C2.75 5.70644 3.09538 5.33335 3.52143 5.33335L6.18567 5.3329C6.71502 5.31841 7.18202 4.95482 7.36214 4.41691C7.36688 4.40277 7.37232 4.38532 7.39185 4.32203L7.50665 3.94993C7.5769 3.72179 7.6381 3.52303 7.72375 3.34536C8.06209 2.64349 8.68808 2.1561 9.41147 2.03132C9.59457 1.99973 9.78848 1.99987 10.0111 2.00002H13.4891C13.7117 1.99987 13.9056 1.99973 14.0887 2.03132C14.8121 2.1561 15.4381 2.64349 15.7764 3.34536C15.8621 3.52303 15.9233 3.72179 15.9935 3.94993L16.1083 4.32203C16.1279 4.38532 16.1333 4.40277 16.138 4.41691C16.3182 4.95482 16.8778 5.31886 17.4071 5.33335H19.9786C20.4046 5.33335 20.75 5.70644 20.75 6.16667C20.75 6.62691 20.4046 7 19.9786 7H3.52143C3.09538 7 2.75 6.62691 2.75 6.16667Z" fill="currentColor"/><path d="M11.6068 21.9998H12.3937C15.1012 21.9998 16.4549 21.9998 17.3351 21.1366C18.2153 20.2734 18.3054 18.8575 18.4855 16.0256L18.745 11.945C18.8427 10.4085 18.8916 9.6402 18.45 9.15335C18.0084 8.6665 17.2628 8.6665 15.7714 8.6665H8.22905C6.73771 8.6665 5.99204 8.6665 5.55047 9.15335C5.10891 9.6402 5.15777 10.4085 5.25549 11.945L5.515 16.0256C5.6951 18.8575 5.78515 20.2734 6.66534 21.1366C7.54553 21.9998 8.89927 21.9998 11.6068 21.9998Z" fill="currentColor"/></svg>
+                      </div>
+                      <div class="settings-row-info">
+                        <div class="settings-row-title" style="color:#ef4444;">Уничтожить учетную запись навсегда</div>
+                        <div class="settings-row-desc">Полное стирание всех постов и сообщений</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- РАЗДЕЛ: КОНФИДЕНЦИАЛЬНОСТЬ И БЕЗОПАСНОСТЬ -->
+            <div id="settingsSectionPrivacy" class="settings-tab-pane" style="display:none;">
+              <div class="settings-panel-header">
+                <h1 class="panel-title">Конфиденциальность и безопасность</h1>
+              </div>
+
+              <!-- Пароль и сессии -->
+              <div class="settings-section">
+                <div class="settings-section-title">Аутентификация и доступ</div>
+                <div class="settings-group">
+                  <div class="settings-row" id="rowChangePassword" style="cursor:pointer;">
+                    <div class="settings-row-left">
+                      <div class="tg-icon-box" style="background: var(--gradient);">
+                        <svg viewBox="0 0 24 24" fill="none"><path fill-rule="evenodd" clip-rule="evenodd" d="M3.37752 5.08241C3 5.62028 3 7.21907 3 10.4167V11.9914C3 17.6294 7.23896 20.3655 9.89856 21.5273C10.62 21.8424 10.9807 22 12 22C13.0193 22 13.38 21.8424 14.1014 21.5273C16.761 20.3655 21 17.6294 21 11.9914V10.4167C21 7.21907 21 5.62028 20.6225 5.08241C20.245 4.54454 18.7417 4.02996 15.7351 3.00079L15.1623 2.80472C13.595 2.26824 12.8114 2 12 2C11.8114 2 10.405 2.26824 8.83772 2.80472L8.26491 3.00079C5.25832 4.02996 3.75503 4.54454 3.37752 5.08241ZM13.5 15C13.5 15.5523 13.0523 16 12.5 16H11.5C10.9477 16 10.5 15.5523 10.5 15V13.5987C9.6033 13.0799 9 12.1104 9 11C9 9.34315 10.3431 8 12 8C13.6569 8 15 9.34315 15 11C15 12.1104 14.3967 13.0799 13.5 13.5987V15Z" fill="currentColor"/></svg>
+                      </div>
+                      <div class="settings-row-info">
+                        <div class="settings-row-title">Сменить ключ доступа (пароль)</div>
+                        <div class="settings-row-desc">Обновить секретный ключ входа</div>
+                      </div>
+                    </div>
+                    <svg style="width:18px; height:18px; fill:var(--text-muted);" viewBox="0 0 24 24"><path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z"/></svg>
+                  </div>
+
+                  <div class="settings-row" id="rowPrivacyGoToDevices" style="cursor:pointer;">
+                    <div class="settings-row-left">
+                      <div class="tg-icon-box" style="background: var(--grad-blue);">
+                        <svg viewBox="0 0 24 24" fill="none">
+                          <path d="M2 14.5C2 13.0955 2 12.3933 2.33706 11.8889C2.48298 11.6705 2.67048 11.483 2.88886 11.3371C3.39331 11 4.09554 11 5.5 11C6.90446 11 7.60669 11 8.11114 11.3371C8.32952 11.483 8.51702 11.6705 8.66294 11.8889C9 12.3933 9 13.0955 9 14.5V18.5C9 19.9045 9 20.6067 8.66294 21.1111C8.51702 21.3295 8.32952 21.517 8.11114 21.6629C7.60669 22 6.90446 22 5.5 22C4.09554 22 3.39331 22 2.88886 21.6629C2.67048 21.517 2.48298 21.3295 2.33706 21.1111C2 20.6067 2 19.9045 2 18.5V14.5Z" fill="currentColor"/>
+                          <path fill-rule="evenodd" clip-rule="evenodd" d="M22 10V14C22 17.7712 22 19.6569 20.8284 20.8284C19.6569 22 17.7712 22 14 22C12.3009 22 10.9846 22 9.94386 21.8929C10.2787 21.368 10.3977 20.8107 10.4502 20.2949C10.5001 19.8039 10.5001 19.2114 10.5 18.566L10.5 18.5V14.5L10.5 14.434C10.5001 13.7886 10.5001 13.1961 10.4502 12.7051C10.396 12.1723 10.2708 11.5953 9.91014 11.0555C9.65479 10.6733 9.32666 10.3452 8.9445 10.0899C8.40473 9.72919 7.82766 9.60403 7.29488 9.54983C6.91621 9.51131 6.47721 9.50253 6.00011 9.50056C6.00239 6.05993 6.0529 4.29024 7.17157 3.17157C8.34315 2 10.2288 2 14 2C17.7712 2 19.6569 2 20.8284 3.17157C22 4.34315 22 6.22876 22 10ZM11.25 19C11.25 18.5858 11.5858 18.25 12 18.25H17C17.4142 18.25 17.75 18.5858 17.75 19C17.75 19.4142 17.4142 19.75 17 19.75H12C11.5858 19.75 11.25 19.4142 11.25 19Z" fill="currentColor"/>
+                        </svg>
+                      </div>
+                      <div class="settings-row-info">
+                        <div class="settings-row-title">Устройства и активные сессии</div>
+                        <div class="settings-row-desc">Управление подключенными клиентами</div>
+                      </div>
+                    </div>
+                    <svg style="width:18px; height:18px; fill:var(--text-muted);" viewBox="0 0 24 24"><path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z"/></svg>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- РАЗДЕЛ: ДАННЫЕ И ПАМЯТЬ (ХРАНИЛИЩЕ И КЭШ) -->
+            <div id="settingsSectionStorage" class="settings-tab-pane" style="display:none;">
+              <div class="settings-panel-header">
+                <h1 class="panel-title">Данные и память</h1>
+              </div>
+
+              <!-- Использование памяти -->
+              <div class="settings-section">
+                <div class="settings-section-title">Использование памяти</div>
+                <div class="settings-group" style="padding:16px;">
+                  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                    <div>
+                      <div style="font-weight:700; font-size:15px;">Локальный кэш сообщений и чатов</div>
+                      <div style="font-size:12px; color:var(--text-muted);">Быстрый доступ к истории без ожидания сервера</div>
+                    </div>
+                    <div id="storageMsgCacheSizeDisplay" style="font-size:15px; font-weight:800; color:var(--primary-red-accent); font-family:monospace;">0 KB</div>
+                  </div>
+
+                  <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <div>
+                      <div style="font-weight:700; font-size:15px;">Все локальные данные приложения</div>
+                      <div style="font-size:12px; color:var(--text-muted);">Включая сессию, настройки и логи</div>
+                    </div>
+                    <div id="storageTotalCacheSizeDisplay" style="font-size:15px; font-weight:800; color:#fff; font-family:monospace;">0 KB</div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Действия с кэшем -->
+              <div class="settings-section">
+                <div class="settings-section-title">Очистить кэш</div>
+                <div class="settings-group">
+                  <div class="settings-row" id="btnClearMessageCache" style="cursor:pointer;">
+                    <div class="settings-row-left">
+                      <div class="tg-icon-box" style="background: var(--grad-blue);">
+                        <svg viewBox="0 0 24 24" fill="none"><path d="M2.75 6.16667C2.75 5.70644 3.09538 5.33335 3.52143 5.33335L6.18567 5.3329C6.71502 5.31841 7.18202 4.95482 7.36214 4.41691C7.36688 4.40277 7.37232 4.38532 7.39185 4.32203L7.50665 3.94993C7.5769 3.72179 7.6381 3.52303 7.72375 3.34536C8.06209 2.64349 8.68808 2.1561 9.41147 2.03132C9.59457 1.99973 9.78848 1.99987 10.0111 2.00002H13.4891C13.7117 1.99987 13.9056 1.99973 14.0887 2.03132C14.8121 2.1561 15.4381 2.64349 15.7764 3.34536C15.8621 3.52303 15.9233 3.72179 15.9935 3.94993L16.1083 4.32203C16.1279 4.38532 16.1333 4.40277 16.138 4.41691C16.3182 4.95482 16.8778 5.31886 17.4071 5.33335H19.9786C20.4046 5.33335 20.75 5.70644 20.75 6.16667C20.75 6.62691 20.4046 7 19.9786 7H3.52143C3.09538 7 2.75 6.62691 2.75 6.16667Z" fill="currentColor"/><path d="M11.6068 21.9998H12.3937C15.1012 21.9998 16.4549 21.9998 17.3351 21.1366C18.2153 20.2734 18.3054 18.8575 18.4855 16.0256L18.745 11.945C18.8427 10.4085 18.8916 9.6402 18.45 9.15335C18.0084 8.6665 17.2628 8.6665 15.7714 8.6665H8.22905C6.73771 8.6665 5.99204 8.6665 5.55047 9.15335C5.10891 9.6402 5.15777 10.4085 5.25549 11.945L5.515 16.0256C5.6951 18.8575 5.78515 20.2734 6.66534 21.1366C7.54553 21.9998 8.89927 21.9998 11.6068 21.9998Z" fill="currentColor"/></svg>
+                      </div>
+                      <div class="settings-row-info">
+                        <div class="settings-row-title">Очистить кэш сообщений</div>
+                        <div class="settings-row-desc">Сообщения подгрузятся с сервера заново при открытии диалогов</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="settings-row" id="btnClearAllAppCache" style="cursor:pointer;">
+                    <div class="settings-row-left">
+                      <div class="tg-icon-box" style="background: var(--grad-red);">
+                        <svg viewBox="0 0 24 24" fill="none"><path d="M2.75 6.16667C2.75 5.70644 3.09538 5.33335 3.52143 5.33335L6.18567 5.3329C6.71502 5.31841 7.18202 4.95482 7.36214 4.41691C7.36688 4.40277 7.37232 4.38532 7.39185 4.32203L7.50665 3.94993C7.5769 3.72179 7.6381 3.52303 7.72375 3.34536C8.06209 2.64349 8.68808 2.1561 9.41147 2.03132C9.59457 1.99973 9.78848 1.99987 10.0111 2.00002H13.4891C13.7117 1.99987 13.9056 1.99973 14.0887 2.03132C14.8121 2.1561 15.4381 2.64349 15.7764 3.34536C15.8621 3.52303 15.9233 3.72179 15.9935 3.94993L16.1083 4.32203C16.1279 4.38532 16.1333 4.40277 16.138 4.41691C16.3182 4.95482 16.8778 5.31886 17.4071 5.33335H19.9786C20.4046 5.33335 20.75 5.70644 20.75 6.16667C20.75 6.62691 20.4046 7 19.9786 7H3.52143C3.09538 7 2.75 6.62691 2.75 6.16667Z" fill="currentColor"/><path d="M11.6068 21.9998H12.3937C15.1012 21.9998 16.4549 21.9998 17.3351 21.1366C18.2153 20.2734 18.3054 18.8575 18.4855 16.0256L18.745 11.945C18.8427 10.4085 18.8916 9.6402 18.45 9.15335C18.0084 8.6665 17.2628 8.6665 15.7714 8.6665H8.22905C6.73771 8.6665 5.99204 8.6665 5.55047 9.15335C5.10891 9.6402 5.15777 10.4085 5.25549 11.945L5.515 16.0256C5.6951 18.8575 5.78515 20.2734 6.66534 21.1366C7.54553 21.9998 8.89927 21.9998 11.6068 21.9998Z" fill="currentColor"/></svg>
+                      </div>
+                      <div class="settings-row-info">
+                        <div class="settings-row-title" style="color:#ef4444;">Сбросить локальные данные и выйти</div>
+                        <div class="settings-row-desc">Удалит сессию и сохраненные данные</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- РАЗДЕЛ 2: АДМИНИСТРИРОВАНИЕ (ВСТРОЕН В НАСТРОЙКИ, ТОЛЬКО ДЛЯ АДМИНА) -->
+            <div id="settingsSectionAdmin" class="settings-tab-pane" style="display:none;">
+              <div class="settings-panel-header" style="display:flex; justify-content:space-between; align-items:center;">
+                <h1 class="panel-title">Администрирование</h1>
+                <button id="btnAdminRefresh" class="action-pill-btn" title="Обновить списки">Обновить</button>
+              </div>
+
+              <!-- Создание пользователя -->
+              <div class="settings-section">
+                <div class="settings-section-title">Создание новой учетной записи (Инвайт 48ч)</div>
+                <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                  <input type="text" id="newUsernameInput" class="auth-input" style="flex:1; min-width:180px;" placeholder="Имя пользователя">
+                  <select id="newUserTrustSelect" class="auth-input" style="width:170px;">
+                    <option value="0">untrusted (0)</option>
+                    <option value="1">trusted (1)</option>
+                    <option value="2">force_trusted (2)</option>
+                  </select>
+                  <button id="btnAdminCreateUser" class="btn-primary">Создать инвайт</button>
+                </div>
+
+                <div id="createdKeyBox" style="display:none; background:#201111; border:1.5px solid #ba1111; border-radius:18px; padding:16px; margin-top:12px;">
+                  <div style="font-size:13px; color:#f87171; font-weight:800; margin-bottom:4px;">
+                    ★ СЫРОЙ КЛЮЧ ДОСТУПА (ВЫДАЕТСЯ ОДИН РАЗ):
+                  </div>
+                  <code id="rawKeyOutput" style="font-size:15px; color:#fff; font-weight:800; word-break:break-all; user-select:all;"></code>
+                </div>
+              </div>
+
+              <!-- Список пользователей -->
+              <div class="settings-section">
+                <div class="settings-section-title">Пользователи сообщества</div>
+                <div id="adminUsersList" class="settings-group"></div>
+              </div>
+
+              <!-- Аудит логи -->
+              <div class="settings-section">
+                <div class="settings-section-title">Глубокие системные логи (Неизменяемые)</div>
+                <div id="adminLogsContainer" class="settings-group" style="max-height:220px; overflow-y:auto; padding:14px;"></div>
+              </div>
+            </div>
+
+            <!-- ПОДСТРАНИЦА НАСТРОЙКИ: ЖИЗНЕННЫЙ ЦИКЛ АККАУНТА (TELEGRAM-STYLE) -->
+            <div id="settingsSubpageLifecycle" class="settings-tab-pane" style="display:none; flex-direction:column; gap:22px;">
+              <div class="settings-subpage-header">
+                <button id="btnBackLifecycleSubpage" class="settings-back-btn" title="Назад к настройкам">
+                  <svg viewBox="0 0 24 24" fill="none"><path d="M20 11.25C20.4142 11.25 20.75 11.5858 20.75 12C20.75 12.4142 20.4142 12.75 20 12.75H10.75L10.75 18C10.75 18.3034 10.5673 18.5768 10.287 18.6929C10.0068 18.809 9.68417 18.7449 9.46967 18.5304L3.46967 12.5304C3.32902 12.3897 3.25 12.1989 3.25 12C3.25 11.8011 3.32902 11.6103 3.46967 11.4697L9.46967 5.46969C9.68417 5.25519 10.0068 5.19103 10.287 5.30711C10.5673 5.4232 10.75 5.69668 10.75 6.00002L10.75 11.25H20Z" fill="currentColor"/></svg>
+                  <span>Назад</span>
+                </button>
+                <h2 class="panel-title" style="margin:0; font-size:24px;">Жизненный цикл аккаунта</h2>
+              </div>
+
+              <!-- Блок: Время -->
+              <div class="settings-section">
+                <div class="settings-section-title">ВРЕМЯ НЕАКТИВНОСТИ</div>
+                <div class="settings-group tg-select-group" id="tgTimeOptionsList">
+                  <div class="tg-select-item" data-months="1">
+                    <span class="tg-select-label">1 месяц</span>
+                    <span class="tg-select-radio"></span>
+                  </div>
+                  <div class="tg-select-item" data-months="3">
+                    <span class="tg-select-label">3 месяца</span>
+                    <span class="tg-select-radio"></span>
+                  </div>
+                </div>
+                <div style="padding-left:14px; color:var(--text-muted); font-size:13px; line-height:1.45;">
+                  Если вы не проявляете активности в sharada дольше указанного периода, система автоматически применит выбранное ниже действие к вашему аккаунту.
+                </div>
+              </div>
+
+              <!-- Блок: Действие -->
+              <div class="settings-section" style="margin-top:4px;">
+                <div class="settings-section-title">ДЕЙСТВИЕ ПРИ НЕАКТИВНОСТИ</div>
+                <div class="settings-group tg-select-group" id="tgPolicyOptionsList">
+                  <div class="tg-select-card" data-policy="delete">
+                    <div class="tg-select-card-top">
+                      <div class="tg-select-label" style="font-weight:800; font-size:16px;">Полное удаление</div>
+                      <span class="tg-select-radio"></span>
+                    </div>
+                    <div class="tg-select-desc">
+                      При истечении заданного времени ваш аккаунт будет полностью удалён с сервера sharada, включая ваши посты, сообщения, профиль и настройки кроме серверных логов.
+                    </div>
+                  </div>
+
+                  <div class="tg-select-card" data-policy="archive">
+                    <div class="tg-select-card-top">
+                      <div class="tg-select-label" style="font-weight:800; font-size:16px;">Архивация</div>
+                      <span class="tg-select-radio"></span>
+                    </div>
+                    <div class="tg-select-desc">
+                      При истечении заданного времени вы не сможете войти в аккаунт пока его не разархивирует администратор sharada. При первом уровне траста аккаунт будет удалён через 6 месяцев архивации, при втором уровне траста аккаунт архивируется навсегда с возможностью архивации администратором.
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- РАЗДЕЛ 3: УСТРОЙСТВА И УПРАВЛЕНИЕ СЕССИЯМИ -->
+            <div id="settingsSectionDevices" class="settings-tab-pane" style="display:none;">
+              <div class="settings-panel-header">
+                <h1 class="panel-title">Устройства</h1>
+              </div>
+
+              <!-- 6.1: Верхний блок промо подключения QR -->
+              <div class="devices-hero-card">
+                <div class="devices-cycling-icon-box" id="deviceCyclingIconContainer">
+                  <div class="device-cycling-icon" id="deviceCyclingIcon">
+                    <!-- SVG иконка устройства (анимированно меняется: windows, apple, android, linux) -->
+                  </div>
+                </div>
+                <div class="devices-hero-text">
+                  Входите в свой аккаунт sharada на любом устройстве с помощью QR кода
+                </div>
+                <button type="button" class="btn-qr-add-device" id="btnAddDeviceQR">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                    <path fill-rule="evenodd" clip-rule="evenodd" d="M16.5249 2H16.5932C17.477 1.99999 18.1897 1.99999 18.7635 2.05454C19.3552 2.1108 19.8707 2.22996 20.3343 2.51405C20.8037 2.80168 21.1983 3.19632 21.486 3.6657C21.77 4.12929 21.8892 4.64482 21.9455 5.23653C22 5.8103 22 6.52304 22 7.40683V7.47517C22 8.05587 22 8.54048 21.9626 8.9341C21.9235 9.34559 21.8386 9.72907 21.623 10.0808C21.4121 10.425 21.1227 10.7144 20.7785 10.9254C20.4267 11.1409 20.0433 11.2258 19.6318 11.2649C19.2382 11.3024 18.7535 11.3023 18.1728 11.3023L17.0679 11.3023C16.2321 11.3024 15.5352 11.3024 14.9819 11.228C14.3979 11.1495 13.8706 10.9768 13.4469 10.5531C13.0232 10.1294 12.8505 9.60212 12.772 9.01812C12.6976 8.46484 12.6976 7.76789 12.6977 6.93209L12.6977 5.82725C12.6977 5.24654 12.6976 4.76185 12.7351 4.36823C12.7742 3.95674 12.8591 3.57325 13.0746 3.22152C13.2856 2.87731 13.575 2.5879 13.9192 2.37697C14.2709 2.16142 14.6544 2.07653 15.0659 2.0374C15.4595 1.99998 15.9442 1.99999 16.5249 2ZM17.3488 7.81395C16.8694 7.81395 16.6297 7.81395 16.4604 7.69385C16.4007 7.65148 16.3485 7.59933 16.3061 7.5396C16.186 7.37034 16.186 7.13061 16.186 6.65117C16.186 6.17173 16.186 5.93199 16.3061 5.76273C16.3485 5.703 16.4007 5.65085 16.4604 5.60847C16.6297 5.48837 16.8694 5.48837 17.3488 5.48837C17.8283 5.48837 18.068 5.48837 18.2373 5.60847C18.297 5.65085 18.3491 5.703 18.3915 5.76273C18.5116 5.93199 18.5116 6.17171 18.5116 6.65116C18.5116 7.13061 18.5116 7.37034 18.3915 7.5396C18.3491 7.59933 18.297 7.65148 18.2373 7.69385C18.068 7.81395 17.8283 7.81395 17.3488 7.81395Z"/>
+                    <path fill-rule="evenodd" clip-rule="evenodd" d="M10.0808 2.37697C9.72907 2.16142 9.34559 2.07653 8.9341 2.0374C8.54047 1.99998 8.05583 1.99999 7.4751 2H7.40684C6.52307 1.99999 5.81029 1.99999 5.23653 2.05454C4.64482 2.1108 4.12929 2.22996 3.6657 2.51405C3.19632 2.80168 2.80168 3.19632 2.51405 3.6657C2.22996 4.12929 2.1108 4.64482 2.05454 5.23653C1.99999 5.81029 1.99999 6.52302 2 7.40679V7.47506C1.99999 8.05579 1.99998 8.54047 2.0374 8.9341C2.07653 9.34559 2.16142 9.72907 2.37697 10.0808C2.5879 10.425 2.87731 10.7144 3.22152 10.9254C3.57325 11.1409 3.95674 11.2258 4.36823 11.2649C4.76183 11.3024 5.24643 11.3023 5.82711 11.3023L6.93209 11.3023C7.76787 11.3024 8.46484 11.3024 9.01812 11.228C9.60212 11.1495 10.1294 10.9768 10.5531 10.5531C10.9768 10.1294 11.1495 9.60212 11.228 9.01812C11.3024 8.46484 11.3024 7.7679 11.3023 6.93212L11.3023 5.82726C11.3023 5.24658 11.3024 4.76183 11.2649 4.36823C11.2258 3.95674 11.1409 3.57325 10.9254 3.22152C10.7144 2.87731 10.425 2.5879 10.0808 2.37697ZM5.76273 7.69385C5.93199 7.81395 6.17171 7.81395 6.65116 7.81395C7.13061 7.81395 7.37034 7.81395 7.5396 7.69385C7.59933 7.65148 7.65148 7.59933 7.69385 7.5396C7.81395 7.37034 7.81395 7.13061 7.81395 6.65116C7.81395 6.17171 7.81395 5.93199 7.69385 5.76273C7.65148 5.703 7.59933 5.65085 7.5396 5.60847C7.37034 5.48837 7.13061 5.48837 6.65116 5.48837C6.17171 5.48837 5.93199 5.48837 5.76273 5.60847C5.703 5.65085 5.65085 5.703 5.60847 5.76273C5.48837 5.93199 5.48837 6.17171 5.48837 6.65116C5.48837 7.13061 5.48837 7.37034 5.60847 7.5396C5.65085 7.59933 5.703 7.65148 5.76273 7.69385Z"/>
+                    <path fill-rule="evenodd" clip-rule="evenodd" d="M9.01812 12.772C9.60212 12.8505 10.1294 13.0232 10.5531 13.4469C10.9768 13.8706 11.1495 14.3979 11.228 14.9819C11.3024 15.5352 11.3024 16.2321 11.3023 17.0679L11.3023 18.1728C11.3023 18.7535 11.3024 19.2382 11.2649 19.6318C11.2258 20.0433 11.1409 20.4267 10.9254 20.7785C10.7144 21.1227 10.425 21.4121 10.0808 21.623C9.72907 21.8386 9.34559 21.9235 8.9341 21.9626C8.54048 22 8.05577 22 7.47507 22H7.40683C6.52304 22 5.8103 22 5.23653 21.9455C4.64482 21.8892 4.12929 21.77 3.6657 21.486C3.19632 21.1983 2.80168 20.8037 2.51405 20.3343C2.22996 19.8707 2.1108 19.3552 2.05454 18.7635C1.99999 18.1897 1.99999 17.477 2 16.5932V16.5249C1.99999 15.9442 1.99998 15.4595 2.0374 15.0659C2.07653 14.6544 2.16142 14.2709 2.37697 13.9192C2.5879 13.575 2.87731 13.2856 3.22152 13.0746C3.57325 12.8591 3.95674 12.7742 4.36823 12.7351C4.76184 12.6976 5.24648 12.6977 5.82717 12.6977L6.93209 12.6977C7.76789 12.6976 8.46484 12.6976 9.01812 12.772ZM6.65116 18.5116C6.17171 18.5116 5.93199 18.5116 5.76273 18.3915C5.703 18.3491 5.65085 18.297 5.60847 18.2373C5.48837 18.068 5.48837 17.8283 5.48837 17.3488C5.48837 16.8694 5.48837 16.6297 5.60847 16.4604C5.65085 16.4007 5.703 16.3485 5.76273 16.3061C5.93199 16.186 6.17171 16.186 6.65115 16.186C7.13059 16.186 7.37034 16.186 7.5396 16.3061C7.59933 16.3485 7.65148 16.4007 7.69385 16.4604C7.81395 16.6297 7.81395 16.8694 7.81395 17.3488C7.81395 17.8283 7.81395 18.068 7.69385 18.2373C7.65148 18.297 7.59933 18.3491 7.5396 18.3915C7.37034 18.5116 7.13061 18.5116 6.65116 18.5116Z"/>
+                    <path d="M12.6977 16.6155V16.6512H14.093C14.093 15.9834 14.0939 15.5351 14.1286 15.1933C14.1622 14.8632 14.2216 14.7107 14.289 14.6098C14.3738 14.4828 14.4828 14.3738 14.6098 14.289C14.7107 14.2216 14.8632 14.1622 15.1933 14.1286C15.5351 14.0939 15.9834 14.093 16.6512 14.093H18.5116V12.6977H16.6155C15.9926 12.6977 15.4729 12.6976 15.0521 12.7404C14.6117 12.7853 14.203 12.8827 13.8346 13.1288C13.5553 13.3154 13.3154 13.5553 13.1288 13.8346C12.8827 14.203 12.7853 14.6117 12.7404 15.0521C12.6976 15.4729 12.6977 15.9926 12.6977 16.6155Z"/>
+                    <path d="M22 18.5351V18.5116H20.6046C20.6046 18.9546 20.6043 19.2519 20.5886 19.4821C20.5733 19.706 20.5459 19.8151 20.5161 19.8868C20.3981 20.1718 20.1718 20.3981 19.8868 20.5161C19.8151 20.5459 19.706 20.5733 19.4821 20.5886C19.2519 20.6043 18.9546 20.6046 18.5116 20.6046H16.6512V22H18.5351C18.9486 22 19.2937 22 19.5771 21.9807C19.8721 21.9606 20.1507 21.9172 20.4208 21.8053C21.0476 21.5456 21.5456 21.0476 21.8053 20.4208C21.9172 20.1507 21.9606 19.8721 21.9807 19.5771C22 19.2937 22 18.9486 22 18.5351Z"/>
+                    <path d="M14.093 21.3023C14.093 21.6876 13.7807 22 13.3953 22C13.01 22 12.6977 21.6876 12.6977 21.3023V18.5116H14.093V21.3023Z"/>
+                    <path d="M21.3023 12.6977C20.917 12.6977 20.6046 13.01 20.6046 13.3953V16.6512H22V13.3953C22 13.01 21.6876 12.6977 21.3023 12.6977Z"/>
+                    <path d="M16.0761 16.6173C16 16.8011 16 17.0341 16 17.5C16 17.9659 16 18.1989 16.0761 18.3827C16.1776 18.6277 16.3723 18.8224 16.6173 18.9239C16.8011 19 17.0341 19 17.5 19C17.9659 19 18.1989 19 18.3827 18.9239C18.6277 18.8224 18.8224 18.6277 18.9239 18.3827C19 18.1989 19 17.9659 19 17.5C19 17.0341 19 16.8011 18.9239 16.6173C18.8224 16.3723 18.6277 16.1776 18.3827 16.0761C18.1989 16 17.9659 16 17.5 16C17.0341 16 16.8011 16 16.6173 16.0761C16.3723 16.1776 16.1776 16.3723 16.0761 16.6173Z"/>
+                  </svg>
+                  <span>Добавить Устройство</span>
+                </button>
+              </div>
+
+              <!-- 6.2.1: Раздел "Это устройство" -->
+              <div class="settings-section">
+                <div class="settings-section-title">Это устройство</div>
+                <div class="settings-group" id="currentDeviceBox">
+                  <div class="settings-row current-device-row">
+                    <div class="settings-row-left" style="display:flex; align-items:center; gap:14px;">
+                      <div class="device-badge-icon" id="currentDeviceIcon">
+                        <!-- SVG -->
+                      </div>
+                      <div class="settings-row-info">
+                        <div class="settings-row-title" id="currentDeviceTitle">Windows Desktop</div>
+                        <div class="settings-row-desc" id="currentDeviceSubtitle">sharada 1.0.0 desktop • онлайн</div>
+                        <div class="device-ip-location" id="currentDeviceLocation">Россия, Локальная сеть</div>
+                      </div>
+                    </div>
+                    <span class="badge badge-admin" style="background:rgba(16,185,129,0.2); color:#34d399; border-color:rgba(16,185,129,0.4);">ТЕКУЩЕЕ</span>
+                  </div>
+                </div>
+
+                <button type="button" class="btn-terminate-others" id="btnTerminateOtherSessions">
+                  Завершить Другие Сессии
+                </button>
+                <div class="terminate-others-desc">
+                  Выход из вашего аккаунта на всех других устройствах кроме этого.
+                </div>
+              </div>
+
+              <!-- 6.2.2: Раздел "Активные сессии" -->
+              <div class="settings-section">
+                <div class="settings-section-title">Активные сессии</div>
+                <div class="settings-group" id="activeSessionsList">
+                  <div class="settings-empty-placeholder" id="noOtherSessionsMsg">
+                    Нет других активных сессий
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- РАЗДЕЛ 4: ДЛЯ РАЗРАБОТЧИКОВ (РЕЖИМ ОТЛАДКИ) -->
+            <div id="settingsSectionDeveloper" class="settings-tab-pane" style="display:none; flex-direction:column; gap:22px;">
+              <div class="settings-panel-header" style="display:flex; justify-content:space-between; align-items:center;">
+                <div>
+                  <h1 class="panel-title" style="margin:0;">Для разработчиков</h1>
+                  <div style="font-size:13px; color:var(--text-muted); margin-top:4px;">Панель отладки и системные логи клиента</div>
+                </div>
+                <span class="badge" style="background:rgba(224,22,22,0.2); color:#ff6b6b; border:1px solid rgba(224,22,22,0.5); font-weight:800; padding:6px 14px; border-radius:12px; letter-spacing:0.8px;">DEV MODE</span>
+              </div>
+
+              <!-- 2. Встроенная консоль логов клиента -->
+              <div class="settings-section">
+                <div class="settings-section-title" style="display:flex; justify-content:space-between; align-items:center;">
+                  <span>КОНСОЛЬ ЛОГОВ КЛИЕНТА</span>
+                  <span id="devLogCountBadge" style="font-size:11px; font-weight:700; color:var(--text-muted); font-family:monospace;">0 событий</span>
+                </div>
+                <div class="dev-terminal-box">
+                  <div class="dev-terminal-toolbar">
+                    <div class="dev-terminal-filters">
+                      <button type="button" class="dev-filter-btn active" data-filter="all">Все</button>
+                      <button type="button" class="dev-filter-btn" data-filter="log">Logs</button>
+                      <button type="button" class="dev-filter-btn" data-filter="warn">Warns</button>
+                      <button type="button" class="dev-filter-btn" data-filter="error">Errors</button>
+                      <button type="button" class="dev-filter-btn" data-filter="net">Network</button>
+                    </div>
+                    <div style="display:flex; gap:8px;">
+                      <button type="button" id="btnDevCopyLogs" class="auth-btn-secondary" style="padding:4px 10px; font-size:11px;">Копировать логи</button>
+                      <button type="button" id="btnDevClearLogs" class="auth-btn-secondary" style="padding:4px 10px; font-size:11px;">Очистить</button>
+                    </div>
+                  </div>
+                  <div class="dev-terminal-screen" id="devTerminalScreen">
+                    <div class="dev-log-line" style="color:#777;">Консоль инициализирована. Перехват логов активен...</div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 3. Системная диагностика и управление хранилищем -->
+              <div class="settings-section">
+                <div class="settings-section-title">ДИАГНОСТИКА И ХРАНИЛИЩЕ</div>
+                <div class="dev-info-grid">
+                  <div class="dev-info-card">
+                    <div class="dev-info-label">Платформа / Runtime</div>
+                    <div class="dev-info-val" id="devInfoPlatform">Desktop / WebView</div>
+                  </div>
+                  <div class="dev-info-card">
+                    <div class="dev-info-label">Разрешение экрана</div>
+                    <div class="dev-info-val" id="devInfoScreen">1920x1080 @2x</div>
+                  </div>
+                  <div class="dev-info-card">
+                    <div class="dev-info-label">Текущий токен</div>
+                    <div class="dev-info-val" id="devInfoToken">eyJhb...</div>
+                  </div>
+                  <div class="dev-info-card">
+                    <div class="dev-info-label">WebSocket URL</div>
+                    <div class="dev-info-val" id="devInfoWs">ws://...</div>
+                  </div>
+                </div>
+
+                <div style="margin-top:14px; display:flex; flex-wrap:wrap; gap:10px;">
+                  <button type="button" id="btnDevExportDiagnostic" class="auth-btn-secondary" style="font-size:13px;">Скачать JSON дамп диагностики</button>
+                  <button type="button" id="btnDevClearStorage" class="auth-btn-secondary" style="font-size:13px; color:#f87171; border-color:rgba(239,68,68,0.3);">Сбросить локальное хранилище</button>
+                  <button type="button" id="btnDevDisable" class="auth-btn-secondary" style="font-size:13px; color:#aaa;">Скрыть режим разработчика</button>
+                </div>
+              </div>
+            </div>
+          </main>
+        </div>
+
+    </div>
+
+    <!-- =======================================================
+         НИЖНЯЯ ПАНЕЛЬ И ПАРЯЩАЯ КАПСУЛА (DESKTOP)
+         ======================================================= -->
+    <footer class="bottom-bar">
+      <div class="brand" style="visibility:hidden; pointer-events:none;">
+        sharada
+      </div>
+
+      <nav class="nav-capsule" aria-label="Навигация">
+        <!-- 1. Лента (заблокирована) -->
+        <div class="nav-item disabled" id="tabFeed">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none">
+            <path fill-rule="evenodd" clip-rule="evenodd" d="M4 5V19C4 20.6569 5.34315 22 7 22H17C18.6569 22 20 20.6569 20 19V9C20 7.34315 18.6569 6 17 6H5C4.44772 6 4 5.55228 4 5ZM7.25 12C7.25 11.5858 7.58579 11.25 8 11.25H16C16.4142 11.25 16.75 11.5858 16.75 12C16.75 12.4142 16.4142 12.75 16 12.75H8C7.58579 12.75 7.25 12.4142 7.25 12ZM7.25 15.5C7.25 15.0858 7.58579 14.75 8 14.75H13.5C13.9142 14.75 14.25 15.0858 14.25 15.5C14.25 15.9142 13.9142 16.25 13.5 16.25H8C7.58579 16.25 7.25 15.9142 7.25 15.5Z" fill="currentColor"/>
+            <path d="M4.40879 4.0871C4.75727 4.24338 5 4.59334 5 5H17C17.3453 5 17.6804 5.04375 18 5.12602V4.30604C18 3.08894 16.922 2.15402 15.7172 2.32614L4.91959 3.86865C4.72712 3.89615 4.55271 3.97374 4.40879 4.0871Z" fill="currentColor"/>
+          </svg>
+          <span class="nav-tooltip">Лента (в разработке)</span>
+        </div>
+
+        <!-- 2. Чаты -->
+        <div class="nav-item active" id="tabChats">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none">
+            <path d="M12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 13.5997 2.37562 15.1116 3.04346 16.4525C3.22094 16.8088 3.28001 17.2161 3.17712 17.6006L2.58151 19.8267C2.32295 20.793 3.20701 21.677 4.17335 21.4185L6.39939 20.8229C6.78393 20.72 7.19121 20.7791 7.54753 20.9565C8.88837 21.6244 10.4003 22 12 22Z" fill="currentColor"/>
+          </svg>
+          <span class="nav-tooltip">Чаты</span>
+        </div>
+
+        <!-- 3. Настройки -->
+        <div class="nav-item" id="tabSettings">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none">
+            <path fill-rule="evenodd" clip-rule="evenodd" d="M12.4277 2C11.3139 2 10.2995 2.6007 8.27081 3.80211L7.58466 4.20846C5.55594 5.40987 4.54158 6.01057 3.98466 7C3.42773 7.98943 3.42773 9.19084 3.42773 11.5937V12.4063C3.42773 14.8092 3.42773 16.0106 3.98466 17C4.54158 17.9894 5.55594 18.5901 7.58466 19.7915L8.27081 20.1979C10.2995 21.3993 11.3139 22 12.4277 22C13.5416 22 14.5559 21.3993 16.5847 20.1979L17.2708 19.7915C19.2995 18.5901 20.3139 17.9894 20.8708 17C21.4277 16.0106 21.4277 14.8092 21.4277 12.4063V11.5937C21.4277 9.19084 21.4277 7.98943 20.8708 7C20.3139 6.01057 19.2995 5.40987 17.2708 4.20846L16.5847 3.80211C14.5559 2.6007 13.5416 2 12.4277 2ZM8.67773 12C8.67773 9.92893 10.3567 8.25 12.4277 8.25C14.4988 8.25 16.1777 9.92893 16.1777 12C16.1777 14.0711 14.4988 15.75 12.4277 15.75C10.3567 15.75 8.67773 14.0711 8.67773 12Z" fill="currentColor"/>
+          </svg>
+          <span class="nav-tooltip">Настройки</span>
+        </div>
+      </nav>
+
+      <div style="width:120px;"></div>
+    </footer>
+  </div>
+
+  <!-- Кружок переподключения на уровне навбара слева с краю экрана (всегда поверх всех страниц) -->
+  <button type="button" id="connStatusCircle" class="conn-status-circle visible" title="Подключение к серверу... Нажмите для настройки соединения">
+    <svg class="conn-spinner-icon" viewBox="0 0 24 24" fill="none">
+      <circle cx="12" cy="12" r="10" stroke="rgba(255,255,255,0.2)" stroke-width="3"/>
+      <path d="M12 2C6.47715 2 2 6.47715 2 12" stroke="#ffffff" stroke-width="3" stroke-linecap="round"/>
+    </svg>
+  </button>
+
+  <!-- =======================================================
+       МОДАЛКА: "НОВОЕ СООБЩЕНИЕ" (ВМЕСТО prompt)
+       ======================================================= -->
+  <div id="newChatModal" class="modal-overlay">
+    <div class="modal-box" style="max-width:480px;">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <h2 class="modal-title">Новое сообщение</h2>
+        <button id="btnCloseNewChatModal" class="icon-btn">✕</button>
+      </div>
+
+      <!-- Строка поиска среди контактов или друзей -->
+      <div class="search-box" style="margin:4px 0;">
+        <svg viewBox="0 0 45.667 45.667" fill="currentColor">
+          <path d="M44.188,37.125l-8.623-8.52c-0.869,1.396-1.903,2.705-3.098,3.896c-1.205,1.206-2.527,2.251-3.939,3.126l8.673,8.569c1.944,1.923,5.071,1.906,7.004-0.024c0.008-0.008,0.015-0.015,0.022-0.021C46.167,42.21,46.141,39.055,44.188,37.125z"/>
+          <path d="M34.385,17.229c0-9.48-7.712-17.192-17.193-17.192c-4.739-0.001-9.037,1.928-12.15,5.041C1.929,8.191,0,12.489,0,17.229c0.001,9.479,7.713,17.192,17.192,17.192c4.74,0,9.039-1.928,12.151-5.042C32.457,26.266,34.385,21.969,34.385,17.229z M24.659,24.695c-1.913,1.912-4.555,3.098-7.466,3.098c-5.825,0-10.564-4.738-10.564-10.564c0-2.912,1.185-5.553,3.098-7.466c1.912-1.913,4.554-3.097,7.467-3.098c5.823,0,10.563,4.739,10.563,10.563C27.757,20.141,26.572,22.782,24.659,24.695z"/>
+        </svg>
+        <input type="text" id="newChatSearchInput" placeholder="Поиск контактов или username...">
+      </div>
+
+      <!-- Кнопки в столбик -->
+      <div class="modal-actions-column">
+        <!-- 1. Новая Группа -->
+        <div class="modal-action-btn" id="btnActionNewGroup">
+          <div class="modal-action-icon" style="background:var(--grad-blue);">
+            <svg viewBox="0 0 24 24" fill="none"><circle cx="9.00098" cy="6" r="4" fill="currentColor"/><ellipse cx="9.00098" cy="17.001" rx="7" ry="4" fill="currentColor"/><path d="M20.9996 17.0005C20.9996 18.6573 18.9641 20.0004 16.4788 20.0004C17.211 19.2001 17.7145 18.1955 17.7145 17.0018C17.7145 15.8068 17.2098 14.8013 16.4762 14.0005C18.9615 14.0005 20.9996 15.3436 20.9996 17.0005Z" fill="currentColor"/><path d="M17.9996 6.00073C17.9996 7.65759 16.6565 9.00073 14.9996 9.00073C14.6383 9.00073 14.292 8.93687 13.9712 8.81981C14.4443 7.98772 14.7145 7.02522 14.7145 5.99962C14.7145 4.97477 14.4447 4.01294 13.9722 3.18127C14.2927 3.06446 14.6387 3.00073 14.9996 3.00073C16.6565 3.00073 17.9996 4.34388 17.9996 6.00073Z" fill="currentColor"/></svg>
+          </div>
+          <div>
+            <div style="font-weight:700; font-size:15px;">Новая Группа</div>
+            <div style="font-size:12px; color:var(--text-muted);">Создать групповой приватный канал</div>
+          </div>
+        </div>
+
+        <!-- 2. Создать Через NFC (отображается только при наличии NFC) -->
+        <div class="modal-action-btn" id="btnActionNFC" style="display:none;">
+          <div class="modal-action-icon" style="background:var(--grad-purple);">
+            <svg viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM4 20V4h16v16H4zm14-4v-2c0-1.1-.9-2-2-2h-3v-2h3c2.21 0 4 1.79 4 4v2h-2zm-6-8h2v2h-2v2h2v2h-4V8h2zm-2 6H6v-2c0-2.21 1.79-4 4-4v2c-1.1 0-2 .9-2 2v2z"/></svg>
+          </div>
+          <div>
+            <div style="font-weight:700; font-size:15px;">Создать Через NFC</div>
+            <div style="font-size:12px; color:var(--text-muted);">Приложить телефон к другому устройству</div>
+          </div>
+        </div>
+
+        <!-- 3. E2EE Чат -->
+        <div class="modal-action-btn" id="btnActionE2EE">
+          <div class="modal-action-icon" style="background:var(--grad-green);">
+            <svg viewBox="0 0 24 24" fill="none"><path fill-rule="evenodd" clip-rule="evenodd" d="M3.37752 5.08241C3 5.62028 3 7.21907 3 10.4167V11.9914C3 17.6294 7.23896 20.3655 9.89856 21.5273C10.62 21.8424 10.9807 22 12 22C13.0193 22 13.38 21.8424 14.1014 21.5273C16.761 20.3655 21 17.6294 21 11.9914V10.4167C21 7.21907 21 5.62028 20.6225 5.08241C20.245 4.54454 18.7417 4.02996 15.7351 3.00079L15.1623 2.80472C13.595 2.26824 12.8114 2 12 2C11.1886 2 10.405 2.26824 8.83772 2.80472L8.26491 3.00079C5.25832 4.02996 3.75503 4.54454 3.37752 5.08241ZM13.5 15C13.5 15.5523 13.0523 16 12.5 16H11.5C10.9477 16 10.5 15.5523 10.5 15V13.5987C9.6033 13.0799 9 12.1104 9 11C9 9.34315 10.3431 8 12 8C13.6569 8 15 9.34315 15 11C15 12.1104 14.3967 13.0799 13.5 13.5987V15Z" fill="currentColor"/></svg>
+          </div>
+          <div>
+            <div style="font-weight:700; font-size:15px;">E2EE Чат</div>
+            <div style="font-size:12px; color:var(--text-muted);">Сквозное шифрование сообщений</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Результаты поиска контактов и пользователей -->
+      <div id="newChatSearchResults" style="max-height:220px; overflow-y:auto; display:flex; flex-direction:column; gap:6px;">
+        <!-- Динамический список -->
+      </div>
+    </div>
+  </div>
+
+  <!-- =======================================================
+       КАСТОМНАЯ УНИВЕРСАЛЬНАЯ МОДАЛКА (ВМЕСТО alert() И confirm())
+       ======================================================= -->
+  <div id="appConfirmModal" class="modal-overlay">
+    <div class="modal-box">
+      <h2 class="modal-title" id="confirmModalTitle">Подтверждение</h2>
+      <div class="modal-desc" id="confirmModalDesc">Вы уверены?</div>
+      <div style="display:flex; justify-content:flex-end; gap:12px; margin-top:10px;">
+        <button id="btnConfirmModalCancel" class="action-pill-btn">Отмена</button>
+        <button id="btnConfirmModalAction" class="btn-primary">Подтвердить</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- МОДАЛЬНОЕ ОКНО: ПОДТВЕРЖДЕНИЕ УНИЧТОЖЕНИЯ АККАУНТА -->
+  <div id="deleteConfirmModal" class="modal-overlay">
+    <div class="modal-box" style="border-color:#ef4444;">
+      <h2 class="modal-title" style="color:#ef4444;">Удаление аккаунта</h2>
+      <div class="modal-desc">
+        Действие приведет к полному физическому стиранию всех ваших сообщений, постов и профиля. Сессии будут завершены, аккаунт помещен в архив на <b>7 дней</b>.
+      </div>
+
+      <div class="auth-input-group">
+        <label class="auth-label">Ключ доступа</label>
+        <input type="password" id="deletePassInput" class="auth-input" placeholder="Ключ доступа">
+      </div>
+
+      <div class="auth-input-group">
+        <label class="auth-label">Текущий 6-значный код TOTP</label>
+        <input type="text" id="deleteTotpInput" class="auth-input" placeholder="000000" maxlength="6">
+      </div>
+
+      <div id="deleteModalError" style="color:#ef4444; font-size:13px; font-weight:700; display:none;"></div>
+
+      <div style="display:flex; justify-content:flex-end; gap:12px; margin-top:8px;">
+        <button id="btnCancelDeleteModal" class="action-pill-btn">Отмена</button>
+        <button id="btnConfirmDeleteModal" class="btn-danger">Подтвердить удаление</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- МОДАЛЬНОЕ ОКНО: СМЕНА ПАРОЛЯ / КЛЮЧА ДОСТУПА -->
+  <div id="changePasswordModal" class="modal-overlay">
+    <div class="modal-box" style="max-width:440px;">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <h2 class="modal-title">Смена ключа доступа</h2>
+        <button id="btnCloseChangePasswordModal" class="icon-btn">✕</button>
+      </div>
+      <div class="modal-desc" style="margin-top:6px;">
+        Для смены ключа доступа введите текущий ключ, новый ключ (дважды) и TOTP код подтверждения.
+      </div>
+
+      <div class="auth-input-group" style="margin-top:12px;">
+        <label class="auth-label" for="changeOldPasswordInput">Текущий ключ доступа</label>
+        <input type="password" id="changeOldPasswordInput" class="auth-input" placeholder="Введите текущий ключ" autocomplete="current-password">
+      </div>
+
+      <div class="auth-input-group">
+        <label class="auth-label" for="changeNewPasswordInput">Новый ключ доступа</label>
+        <input type="password" id="changeNewPasswordInput" class="auth-input" placeholder="Введите новый надежный ключ" autocomplete="new-password">
+      </div>
+
+      <div class="auth-input-group">
+        <label class="auth-label" for="changeConfirmPasswordInput">Повторите новый ключ</label>
+        <input type="password" id="changeConfirmPasswordInput" class="auth-input" placeholder="Повторите новый ключ" autocomplete="new-password">
+      </div>
+
+      <div class="auth-input-group">
+        <label class="auth-label" for="changeTotpCodeInput">TOTP Код 2FA (если активен)</label>
+        <input type="text" id="changeTotpCodeInput" class="auth-input" placeholder="000000" maxlength="6" style="text-align:center; letter-spacing:4px; font-weight:700;">
+      </div>
+
+      <div id="changePasswordErrorMsg" style="display:none; color:#ef4444; font-size:13px; font-weight:600; margin-top:6px;"></div>
+
+      <div style="display:flex; justify-content:flex-end; gap:12px; margin-top:14px;">
+        <button id="btnCancelChangePassword" class="action-pill-btn">Отмена</button>
+        <button id="btnSubmitChangePassword" class="btn-primary">Обновить ключ</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- МОДАЛЬНОЕ ОКНО: СОЗДАНИЕ ГРУППЫ -->
+  <div id="newGroupModal" class="modal-overlay">
+    <div class="modal-box" style="max-width:440px;">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <h2 class="modal-title">Новая Группа</h2>
+        <button id="btnCloseNewGroupModal" class="icon-btn">✕</button>
+      </div>
+      <div class="auth-input-group" style="margin-top:10px;">
+        <label class="auth-label">Название группы</label>
+        <input type="text" id="newGroupNameInput" class="auth-input" placeholder="Название группы...">
+      </div>
+      <div class="auth-input-group">
+        <label class="auth-label">Описание (необязательно)</label>
+        <input type="text" id="newGroupDescInput" class="auth-input" placeholder="Приватный групповой чат">
+      </div>
+      <div style="display:flex; justify-content:flex-end; gap:12px; margin-top:8px;">
+        <button id="btnCancelNewGroup" class="action-pill-btn">Отмена</button>
+        <button id="btnSubmitNewGroup" class="btn-primary">Создать</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- МОДАЛКА: ДЕТАЛИ СЕССИИ УСТРОЙСТВА -->
+  <div id="sessionDetailModal" class="modal-overlay">
+    <div class="modal-box session-modal-box">
+      <div class="session-modal-header">
+        <button id="btnCloseSessionDetailModal" class="icon-btn">✕</button>
+      </div>
+
+      <div class="session-modal-center">
+        <div class="session-modal-icon" id="sessionModalIcon"></div>
+        <h2 class="session-modal-title" id="sessionModalDeviceName">Android Device</h2>
+        <div class="session-modal-active-time" id="sessionModalLastActive">Был в сети 5 минут назад</div>
+      </div>
+
+      <div class="session-info-card">
+        <div class="session-info-line">
+          <span class="session-info-label">Клиент</span>
+          <span class="session-info-value" id="sessionModalClientName">sharada 1.0.0 android</span>
+        </div>
+        <div class="session-info-line">
+          <span class="session-info-label">Локация</span>
+          <span class="session-info-value" id="sessionModalLocation">Россия, Москва</span>
+        </div>
+        <div class="session-info-line">
+          <span class="session-info-label">IP-адрес</span>
+          <span class="session-info-value" id="sessionModalIP">192.168.1.100</span>
+        </div>
+      </div>
+
+      <!-- Ползунки -->
+      <div class="session-toggles-card">
+        <div class="session-toggle-row">
+          <div class="session-toggle-info">
+            <div class="session-toggle-title">Разрешить E2EE чаты</div>
+            <div class="session-toggle-desc">Шифрование сообщений на этом устройстве</div>
+          </div>
+          <label class="toggle-switch">
+            <input type="checkbox" id="toggleSessionE2EE" checked>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+
+        <div class="session-toggle-row">
+          <div class="session-toggle-info">
+            <div class="session-toggle-title">Разрешить Звонки</div>
+            <div class="session-toggle-desc">Прием аудио и видео вызовов</div>
+          </div>
+          <label class="toggle-switch">
+            <input type="checkbox" id="toggleSessionCalls" checked>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+      </div>
+
+      <button type="button" class="btn-danger" id="btnTerminateSelectedSession" style="width:100%; border-radius:18px; padding:14px; font-weight:800; cursor:pointer;">
+        Завершить Сессию
+      </button>
+    </div>
+  </div>
+
+  <!-- МОДАЛКА: QR КОД ДОБАВЛЕНИЯ УСТРОЙСТВА -->
+  <div id="addDeviceQRModal" class="modal-overlay">
+    <div class="modal-box" style="text-align:center; max-width:440px;">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <h2 class="modal-title">Связать устройство</h2>
+        <button id="btnCloseAddDeviceQRModal" class="icon-btn">✕</button>
+      </div>
+      <p class="modal-desc" style="margin-top:6px;">
+        Откройте Sharada на телефоне или планшете и отсканируйте этот QR-код для мгновенного входа.
+      </p>
+      <div style="background:#fff; padding:16px; border-radius:24px; display:inline-block; margin:16px auto;">
+        <img id="addDeviceQRImage" src="" alt="QR" style="width:190px; height:190px; display:block;">
+      </div>
+      <div style="font-size:12px; color:var(--text-muted); font-weight:600;">
+        Код действителен в течение 5 минут
+      </div>
+    </div>
+  </div>
+
+  <!-- =======================================================
+       МОДАЛЬНОЕ ОКНО: НАСТРОЙКИ СОЕДИНЕНИЯ И ПРОКСИ
+       ======================================================= -->
+  <div id="connSettingsModal" class="modal-overlay">
+    <div class="modal-box" style="max-width:480px; text-align:left;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+        <div style="display:flex; align-items:center; gap:10px;">
+          <h2 class="modal-title" style="margin:0;">Соединение</h2>
+          <span id="proxyModalStatusBadge" class="badge badge-connecting" style="font-size:11px; padding:3px 8px; border-radius:8px;">ПОДКЛЮЧЕНИЕ...</span>
+        </div>
+        <button id="btnCloseConnModalX" class="icon-btn" title="Закрыть">✕</button>
+      </div>
+
+      <!-- 1. Тумблер включения прокси -->
+      <div class="session-toggles-card" style="margin-bottom:14px;">
+        <div class="session-toggle-row">
+          <div class="session-toggle-info">
+            <div class="session-toggle-title">Использовать Прокси</div>
+            <div class="session-toggle-desc">Маршрутизировать подключение через прокси-сервер</div>
+          </div>
+          <label class="toggle-switch">
+            <input type="checkbox" id="toggleProxyEnabled">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+      </div>
+
+      <!-- 2. Параметры прокси (раскрывается при включении) -->
+      <div id="proxyDetailsSection" style="display:none; margin-bottom:16px;">
+        <div style="font-size:11px; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;">Протокол и сервер</div>
+        <div style="display:flex; gap:10px; margin-bottom:10px;">
+          <select id="proxyProtocolSelect" class="auth-input" style="width:110px; background:#1c1c1c;">
+            <option value="socks5" selected>SOCKS5</option>
+            <option value="http">HTTP</option>
+            <option value="https">HTTPS</option>
+          </select>
+          <input type="text" id="proxyHostInput" class="auth-input" placeholder="IP или домен (127.0.0.1)" style="flex:1;">
+          <input type="number" id="proxyPortInput" class="auth-input" placeholder="Порт" style="width:90px;" min="1" max="65535">
+        </div>
+
+        <div style="font-size:11px; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;">Авторизация (если требуется)</div>
+        <div style="display:flex; gap:10px; margin-bottom:14px;">
+          <input type="text" id="proxyUserInput" class="auth-input" placeholder="Логин" style="flex:1;">
+          <input type="password" id="proxyPassInput" class="auth-input" placeholder="Пароль" style="flex:1;">
+        </div>
+
+        <!-- 3. Когда выключается прокси -->
+        <div style="font-size:11px; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;">Когда выключается прокси</div>
+        <div class="proxy-radio-grid">
+          <label class="proxy-radio-card">
+            <input type="radio" name="proxyDisableOn" value="never" checked>
+            <span class="proxy-radio-label">Никогда</span>
+          </label>
+          <label class="proxy-radio-card">
+            <input type="radio" name="proxyDisableOn" value="vpn">
+            <span class="proxy-radio-label">VPN</span>
+          </label>
+          <label class="proxy-radio-card">
+            <input type="radio" name="proxyDisableOn" value="mobile">
+            <span class="proxy-radio-label">Мобильные Данные</span>
+          </label>
+          <label class="proxy-radio-card">
+            <input type="radio" name="proxyDisableOn" value="wifi">
+            <span class="proxy-radio-label">Wi-Fi</span>
+          </label>
+        </div>
+      </div>
+
+      <!-- Статус проверки и кнопки -->
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-top:14px; padding-top:10px; border-top:1px solid rgba(255,255,255,0.08);">
+        <div style="display:flex; align-items:center; gap:8px;">
+          <button type="button" id="btnTestProxyConn" class="auth-btn-secondary" style="padding:6px 12px; font-size:12px;">Проверить</button>
+          <span id="proxyTestResult" style="font-size:12px; font-family:monospace; color:var(--text-muted);"></span>
+        </div>
+        <div style="display:flex; gap:10px;">
+          <button type="button" id="btnCloseConnModal" class="action-pill-btn">Закрыть</button>
+          <button type="button" id="btnSaveProxyConfig" class="btn-primary" style="padding:8px 20px;">Сохранить</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ПОЛНОЭКРАННЫЙ ЭКРАН NFC СОПРЯЖЕНИЯ -->
+  <div id="nfcFullscreenScreen" class="nfc-fullscreen">
+    <!-- Кнопка назад слева вверху -->
+    <button id="btnCloseNFCFullscreen" class="nfc-back-btn" title="Вернуться к чатам">
+      <svg viewBox="0 0 24 24" fill="none"><path d="M20 11.25C20.4142 11.25 20.75 11.5858 20.75 12C20.75 12.4142 20.4142 12.75 20 12.75H10.75L10.75 18C10.75 18.3034 10.5673 18.5768 10.287 18.6929C10.0068 18.809 9.68417 18.7449 9.46967 18.5304L3.46967 12.5304C3.32902 12.3897 3.25 12.1989 3.25 12C3.25 11.8011 3.32902 11.6103 3.46967 11.4697L9.46967 5.46969C9.68417 5.25519 10.0068 5.19103 10.287 5.30711C10.5673 5.4232 10.75 5.69668 10.75 6.00002L10.75 11.25H20Z" fill="currentColor"/></svg>
+    </button>
+
+    <!-- Заголовок -->
+    <div class="nfc-header-wrap">
+      <h2 class="nfc-title">Приложите своё устройство NFC чипом к другому устройству</h2>
+      <div class="nfc-subtitle">(на этом устройстве должен быть открытым такой же экран)</div>
+    </div>
+
+    <!-- Центр: Прямоугольник с белой обводкой и расходящимися волнами -->
+    <div class="nfc-center-area">
+      <div class="nfc-wave-ring wave-1"></div>
+      <div class="nfc-wave-ring wave-2"></div>
+      <div class="nfc-wave-ring wave-3"></div>
+      
+      <div class="nfc-phone-box">
+        <svg class="nfc-symbol" viewBox="0 0 24 24">
+          <path d="M20 2H4c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM4 20V4h16v16H4zm14-4v-2c0-1.1-.9-2-2-2h-3v-2h3c2.21 0 4 1.79 4 4v2h-2zm-6-8h2v2h-2v2h2v2h-4V8h2zm-2 6H6v-2c0-2.21 1.79-4 4-4v2c-1.1 0-2 .9-2 2v2z"/>
+        </svg>
+      </div>
+    </div>
+
+    <!-- В самом низу серый текст -->
+    <div class="nfc-footer-note">
+      Чехлы, банковские карты или банковские стикеры могут помешать спариванию устройств!
+    </div>
+  </div>
+
+  <script>
+    window._pendingUser = '';
+    window._pendingPass = '';
+
+    window.sharadaSubmitStep1 = function(e) {
+      if (e && e.preventDefault) { e.preventDefault(); e.stopPropagation(); }
+      var userEl = document.getElementById('loginUsername');
+      var passEl = document.getElementById('loginPassword');
+      var u = userEl ? userEl.value.trim() : '';
+      var p = passEl ? passEl.value.trim() : '';
+      var errEl = document.getElementById('authErrorMsg');
+      if (!u || !p) {
+        if (errEl) { errEl.textContent = 'Введите имя пользователя и ключ доступа'; errEl.style.display = 'block'; }
+        return false;
+      }
+      var btn = document.getElementById('btnStep1Next');
+      if (btn) { btn.textContent = 'Проверка...'; btn.disabled = true; }
+      if (errEl) errEl.style.display = 'none';
+
+      var controller = new AbortController();
+      var timeoutId = setTimeout(function() { controller.abort(); }, 8000);
+      var host = window.getSharadaServerHost();
+      var proto = window.getSharadaProto ? window.getSharadaProto(host) : 'http://';
+
+      fetch(proto + host + '/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: u, password: p }),
+        signal: controller.signal
+      })
+      .then(function(r) { return r.json().then(function(data) { return { ok: r.ok, data: data }; }); })
+      .then(function(res) {
+        clearTimeout(timeoutId);
+        var ok = res.ok, data = res.data;
+        if (btn) {
+          btn.innerHTML = '<span>Далее</span><svg style="width:18px; height:18px; fill:currentColor;" viewBox="0 0 24 24"><path d="M12 4l-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8z"/></svg>';
+          btn.disabled = false;
+        }
+        if (!ok) {
+          if (errEl) { errEl.textContent = data.message || 'Ошибка авторизации'; errEl.style.display = 'block'; }
+          return;
+        }
+        if (errEl) errEl.style.display = 'none';
+        window._pendingUser = u;
+        window._pendingPass = p;
+        if (data.status === 'REQUIRE_2FA' || data.requires_totp) {
+          var step1 = document.getElementById('authStep1');
+          var step2 = document.getElementById('authStepTOTP');
+          var label = document.getElementById('totpAccountLabel');
+          if (label) label.textContent = u;
+          if (step1) { step1.classList.remove('fade-in'); step1.classList.add('hidden-step'); }
+          if (step2) { step2.classList.remove('hidden-step'); step2.classList.add('fade-in'); }
+          var codeInput = document.getElementById('loginTotpCode');
+          if (codeInput) { codeInput.value = ''; setTimeout(function() { codeInput.focus(); }, 150); }
+        } else if (data.status === 'PENDING_2FA' || data.requires_2fa_setup) {
+          var step1 = document.getElementById('authStep1');
+          var step3 = document.getElementById('authStepSetup2FA');
+          var qr = document.getElementById('totpQrImg');
+          var secret = document.getElementById('totpSecretText');
+          if (qr && data.totp_qr_data_uri) qr.src = data.totp_qr_data_uri;
+          if (secret && data.totp_secret) secret.textContent = data.totp_secret;
+          if (step1) { step1.classList.remove('fade-in'); step1.classList.add('hidden-step'); }
+          if (step3) { step3.classList.remove('hidden-step'); step3.classList.add('fade-in'); }
+          var setupInput = document.getElementById('setupTotpInput');
+          if (setupInput) { setupInput.value = ''; setTimeout(function() { setupInput.focus(); }, 150); }
+        } else if (data.token) {
+          localStorage.setItem('sharada_token', data.token);
+          document.body.classList.remove('auth-mode');
+          var backdrop = document.getElementById('authBackdrop');
+          if (backdrop) backdrop.classList.add('hidden');
+          if (data.user) {
+            var sUser = document.getElementById('sidebarUsername');
+            if (sUser) sUser.textContent = data.user.username;
+            var sRole = document.getElementById('userBadgeRole');
+            if (sRole) sRole.textContent = data.user.is_admin ? 'ADMIN' : ('T' + data.user.trust_level);
+          }
+          if (window.sharadaOnAuthSuccess) window.sharadaOnAuthSuccess(data.user);
+        }
+      })
+      .catch(function(err) {
+        clearTimeout(timeoutId);
+        if (btn) {
+          btn.innerHTML = '<span>Далее</span><svg style="width:18px; height:18px; fill:currentColor;" viewBox="0 0 24 24"><path d="M12 4l-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8z"/></svg>';
+          btn.disabled = false;
+        }
+        var msg = err.name === 'AbortError'
+          ? 'Таймаут подключения к серверу http://' + host + '. Проверьте, что телефон подключен к той же Wi-Fi сети и порт 8080 открыт'
+          : ('Ошибка подключения к http://' + host + ': ' + (err.message || err));
+        if (errEl) { errEl.textContent = msg; errEl.style.display = 'block'; }
+      });
+      return false;
+    };
+
+    window.sharadaBackToStep1 = function(e) {
+      if (e && e.preventDefault) { e.preventDefault(); e.stopPropagation(); }
+      var step1 = document.getElementById('authStep1');
+      var step2 = document.getElementById('authStepTOTP');
+      var step3 = document.getElementById('authStepSetup2FA');
+      var errEl = document.getElementById('authErrorMsg');
+      if (errEl) errEl.style.display = 'none';
+      if (step2) { step2.classList.remove('fade-in'); step2.classList.add('hidden-step'); }
+      if (step3) { step3.classList.remove('fade-in'); step3.classList.add('hidden-step'); }
+      if (step1) { step1.classList.remove('hidden-step'); step1.classList.add('fade-in'); }
+      var userEl = document.getElementById('loginUsername');
+      if (userEl) setTimeout(function() { userEl.focus(); }, 150);
+      return false;
+    };
+
+    window.sharadaSubmitStep2 = function(e) {
+      if (e && e.preventDefault) { e.preventDefault(); e.stopPropagation(); }
+      var codeEl = document.getElementById('loginTotpCode');
+      var code = codeEl ? codeEl.value.trim() : '';
+      var errEl = document.getElementById('authErrorMsg');
+      if (!code || code.length < 6) {
+        if (errEl) { errEl.textContent = 'Введите 6-значный код из Google Authenticator'; errEl.style.display = 'block'; }
+        return false;
+      }
+      var userEl = document.getElementById('loginUsername');
+      var passEl = document.getElementById('loginPassword');
+      var u = window._pendingUser || (userEl ? userEl.value.trim() : '');
+      var p = window._pendingPass || (passEl ? passEl.value.trim() : '');
+      var btn = document.getElementById('btnStep2Login');
+      if (btn) { btn.textContent = 'Вход...'; btn.disabled = true; }
+      var controller = new AbortController();
+      var timeoutId = setTimeout(function() { controller.abort(); }, 8000);
+      var host = window.getSharadaServerHost();
+      var proto = window.getSharadaProto ? window.getSharadaProto(host) : 'http://';
+
+      fetch(proto + host + '/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: u,
+          password: p,
+          totp_code: code
+        }),
+        signal: controller.signal
+      })
+      .then(function(r) { return r.json().then(function(data) { return { ok: r.ok, data: data }; }); })
+      .then(function(res) {
+        clearTimeout(timeoutId);
+        var ok = res.ok, data = res.data;
+        if (btn) { btn.textContent = 'Войти в сеть'; btn.disabled = false; }
+        if (!ok) {
+          if (errEl) { errEl.textContent = data.message || 'Неверный код 2FA'; errEl.style.display = 'block'; }
+          return;
+        }
+        if (errEl) errEl.style.display = 'none';
+        if (data.token) {
+          localStorage.setItem('sharada_token', data.token);
+        }
+        document.body.classList.remove('auth-mode');
+        var backdrop = document.getElementById('authBackdrop');
+        if (backdrop) backdrop.classList.add('hidden');
+        if (data.user) {
+          var sUser = document.getElementById('sidebarUsername');
+          if (sUser) sUser.textContent = data.user.username;
+          var sRole = document.getElementById('userBadgeRole');
+          if (sRole) sRole.textContent = data.user.is_admin ? 'ADMIN' : ('T' + data.user.trust_level);
+        }
+        if (window.sharadaOnAuthSuccess) {
+          window.sharadaOnAuthSuccess(data.user);
+        }
+      })
+      .catch(function(err) {
+        clearTimeout(timeoutId);
+        if (btn) { btn.textContent = 'Войти в сеть'; btn.disabled = false; }
+        var msg = err.name === 'AbortError'
+          ? 'Таймаут подключения к серверу http://' + host
+          : ('Ошибка сети: ' + (err.message || err));
+        if (errEl) { errEl.textContent = msg; errEl.style.display = 'block'; }
+      });
+      return false;
+    };
+
+    window.sharadaSubmitStep3 = function(e) {
+      if (e && e.preventDefault) { e.preventDefault(); e.stopPropagation(); }
+      var codeEl = document.getElementById('setupTotpInput');
+      var code = codeEl ? codeEl.value.trim() : '';
+      var errEl = document.getElementById('authErrorMsg');
+      if (!code || code.length < 6) {
+        if (errEl) { errEl.textContent = 'Введите 6 цифр подтверждения'; errEl.style.display = 'block'; }
+        return false;
+      }
+      var userEl = document.getElementById('loginUsername');
+      var passEl = document.getElementById('loginPassword');
+      var u = window._pendingUser || (userEl ? userEl.value.trim() : '');
+      var p = window._pendingPass || (passEl ? passEl.value.trim() : '');
+      var btn = document.getElementById('btnConfirm2FASetup');
+      var controller = new AbortController();
+      var timeoutId = setTimeout(function() { controller.abort(); }, 8000);
+      var host = window.getSharadaServerHost();
+      var proto = window.getSharadaProto ? window.getSharadaProto(host) : 'http://';
+
+      fetch(proto + host + '/api/auth/setup-2fa', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: u,
+          password: p,
+          totp_code: code
+        }),
+        signal: controller.signal
+      })
+      .then(function(r) { return r.json().then(function(data) { return { ok: r.ok, data: data }; }); })
+      .then(function(res) {
+        var ok = res.ok, data = res.data;
+        if (btn) { btn.textContent = 'Подтвердить и активировать'; btn.disabled = false; }
+        if (!ok) {
+          if (errEl) { errEl.textContent = data.message || 'Неверный код активации'; errEl.style.display = 'block'; }
+          return;
+        }
+        if (data.token) {
+          localStorage.setItem('sharada_token', data.token);
+        }
+        document.body.classList.remove('auth-mode');
+        var backdrop = document.getElementById('authBackdrop');
+        if (backdrop) backdrop.classList.add('hidden');
+        if (data.user) {
+          var sUser = document.getElementById('sidebarUsername');
+          if (sUser) sUser.textContent = data.user.username;
+          var sRole = document.getElementById('userBadgeRole');
+          if (sRole) sRole.textContent = data.user.is_admin ? 'ADMIN' : ('T' + data.user.trust_level);
+        }
+        if (window.sharadaOnAuthSuccess) {
+          window.sharadaOnAuthSuccess(data.user);
+        }
+      })
+      .catch(function(err) {
+        if (btn) { btn.textContent = 'Подтвердить и активировать'; btn.disabled = false; }
+        if (errEl) { errEl.textContent = 'Ошибка сети: ' + (err.message || err); errEl.style.display = 'block'; }
+      });
+      return false;
+    };
+
+    // Обновляем текст ссылки сервера при загрузке
+    document.addEventListener('DOMContentLoaded', function() {
+      var sLink = document.getElementById('authServerHostLink');
+      if (sLink && window.getSharadaServerHost) {
+        sLink.textContent = window.getSharadaServerHost();
+      }
+    });
+  </script>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

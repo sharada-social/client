@@ -1,0 +1,61 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "sharada",
+  "version": "1.1.0",
+  "identifier": "com.sharada.app",
+  "build": {
+    "beforeBuildCommand": "node build.js",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Sharada",
+        "width": 1200,
+        "height": 800,
+        "minWidth": 480,
+        "minHeight": 640,
+        "center": true,
+        "resizable": true,
+        "fullscreen": false
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "shortDescription": "нишевый приватный мессенджер✌️",
+    "longDescription": "sharada - безопасный приватный мессенджер со сквозным шифрованием (E2EE), самоуничтожением сессий и локальным кэшированием.",
+    "category": "Chat",
+    "copyright": "Copyright 2026 Sharada Security Team odabebe 4o4 52 67",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "linux": {
+      "deb": {
+        "depends": [
+          "libwebkit2gtk-4.1-0",
+          "libgtk-3-0",
+          "libayatana-appindicator3-1",
+          "librsvg2-2"
+        ]
+      },
+      "rpm": {
+        "depends": [
+          "webkit2gtk4.1",
+          "gtk3",
+          "libayatana-appindicator-gtk3",
+          "librsvg2"
+        ]
+      }
+    }
+  }
+}
