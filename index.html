@@ -30,6 +30,7 @@
     </div>
   </div>
   <script>
+    window.SHARADA_VERSION = '1.3.1';
     window.getSharadaServerHost = function() {
       var custom = localStorage.getItem('sharada_server_host');
       if (custom && custom.trim()) {
@@ -103,13 +104,9 @@
       
       <!-- Шапка карточки входа -->
       <div class="auth-header-centered">
-        <div class="auth-logo-star">
-          <svg viewBox="0 0 24 24" class="sharada-star-logo-icon">
-            <path d="M12 2L14.4 9.6L22 12L14.4 14.4L12 22L9.6 14.4L2 12L9.6 9.6L12 2Z"/>
-          </svg>
-        </div>
+        <img src="assets/icons/app-icon.png" class="auth-app-logo-icon" alt="sharada">
         <h2 class="auth-title">Вход в sharada</h2>
-        <div class="auth-version-sub">v1.2.0</div>
+        <div class="auth-version-sub">v1.3.1</div>
       </div>
 
       <!-- Сообщение об ошибке -->
@@ -437,12 +434,10 @@
             <!-- Футер настроек: Название и версия (триггер 5 кликов для разработчиков) -->
             <div class="settings-sidebar-footer" id="settingsDevTrigger" title="Нажмите 5 раз для режима разработчика">
               <div class="settings-brand-row">
-                <svg viewBox="0 0 24 24" class="settings-sharada-logo-icon">
-                  <path d="M12 2L14.4 9.6L22 12L14.4 14.4L12 22L9.6 14.4L2 12L9.6 9.6L12 2Z"/>
-                </svg>
+                <img src="assets/icons/app-icon.png" class="settings-sharada-logo-icon" alt="sharada">
                 <div class="settings-brand-text">sharada</div>
               </div>
-              <div class="settings-version-text">v1.3.0 (Release)</div>
+              <div class="settings-version-text">v1.3.1 (Release)</div>
               <div id="devStepsRemaining" class="dev-steps-pill" style="display:none;"></div>
             </div>
           </aside>
@@ -1026,7 +1021,7 @@
   </button>
 
   <!-- МОДАЛКА: "У МЕНЯ НЕТ ДАННЫХ" -->
-  <div id="modalNoAuthData" class="modal-overlay hidden">
+  <div id="modalNoAuthData" class="modal-overlay hidden" onclick="if(event.target===this) window.hideNoAuthDataModal && window.hideNoAuthDataModal(event)">
     <div class="modal-box" style="max-width:440px;">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
         <h2 class="modal-title" style="font-size:20px; font-weight:800;">Приватная сеть</h2>

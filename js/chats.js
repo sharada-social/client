@@ -17,7 +17,14 @@ const activeChatE2EE = document.getElementById('activeChatE2EE');
 const messagesContainer = document.getElementById('messagesContainer');
 const messageInput = document.getElementById('messageInput');
 const btnSendMessage = document.getElementById('btnSendMessage');
+const btnAttachFile = document.getElementById('btnAttachFile');
 const chatMainContent = document.getElementById('chatMainContent');
+
+export function resetInputHeight() {
+  if (!messageInput) return;
+  messageInput.style.height = '36px';
+  messageInput.classList.remove('scrollable');
+}
 
 // Typing Indicator Cloud Elements
 const chatTypingIndicator = document.getElementById('chatTypingIndicator');
@@ -321,8 +328,8 @@ export function renderChannelList(channels) {
       avatarBg = 'background:var(--grad-purple); font-size:22px;';
       avatarContent = '★';
     } else if (ch.type === 'system') {
-      avatarBg = 'background:transparent; padding:0;';
-      avatarContent = `<img src="assets/icons/app-icon.png" style="width:100%; height:100%; object-fit:cover; border-radius:inherit;" alt="sharada">`;
+      avatarBg = 'background:var(--primary-red-accent); display:flex; align-items:center; justify-content:center;';
+      avatarContent = `<img src="assets/icons/app-icon.png" style="width:62%; height:62%; object-fit:contain;" alt="sharada">`;
     }
 
     // Время и статус прочтения последнего сообщения
@@ -414,6 +421,8 @@ function setChatHeaderData(channel) {
     activeChatE2EE.style.display = (channel.is_e2ee && channel.type !== 'saved' && channel.type !== 'system') ? 'inline-flex' : 'none';
   }
 
+  const inputCapsule = messageInput?.closest('.input-capsule');
+
   if (channel.type === 'saved') {
     if (activeChatTitle) activeChatTitle.textContent = 'Избранное';
     if (activeChatAvatar) {
@@ -422,13 +431,17 @@ function setChatHeaderData(channel) {
     }
     if (activeChatOnlineDot) activeChatOnlineDot.style.display = 'none';
     if (activeChatStatusText) activeChatStatusText.textContent = 'ваше личное хранилище';
+    if (btnAttachFile) btnAttachFile.style.display = 'inline-flex';
+    if (btnSendMessage) {
+      btnSendMessage.style.display = 'flex';
+      btnSendMessage.disabled = false;
+      btnSendMessage.style.opacity = '1';
+    }
+    if (inputCapsule) inputCapsule.classList.remove('system-mode');
     if (messageInput) {
       messageInput.placeholder = 'Написать в Избранное...';
       messageInput.disabled = false;
-    }
-    if (btnSendMessage) {
-      btnSendMessage.disabled = false;
-      btnSendMessage.style.opacity = '1';
+      resetInputHeight();
     }
     return;
   }
@@ -436,18 +449,24 @@ function setChatHeaderData(channel) {
   if (channel.type === 'system') {
     if (activeChatTitle) activeChatTitle.textContent = 'sharada';
     if (activeChatAvatar) {
-      activeChatAvatar.innerHTML = `<img src="assets/icons/app-icon.png" style="width:100%; height:100%; object-fit:cover; border-radius:inherit;" alt="sharada">`;
-      activeChatAvatar.style.background = 'transparent';
+      activeChatAvatar.style.background = 'var(--primary-red-accent)';
+      activeChatAvatar.style.display = 'flex';
+      activeChatAvatar.style.alignItems = 'center';
+      activeChatAvatar.style.justifyContent = 'center';
+      activeChatAvatar.innerHTML = `<img src="assets/icons/app-icon.png" style="width:62%; height:62%; object-fit:contain;" alt="sharada">`;
     }
     if (activeChatOnlineDot) activeChatOnlineDot.style.display = 'none';
     if (activeChatStatusText) activeChatStatusText.textContent = 'официальные системные уведомления';
+    
+    // В системном чате полностью скрываем кнопки прикрепления и отправки
+    if (btnAttachFile) btnAttachFile.style.display = 'none';
+    if (btnSendMessage) btnSendMessage.style.display = 'none';
+    if (inputCapsule) inputCapsule.classList.add('system-mode');
     if (messageInput) {
+      messageInput.value = '';
       messageInput.placeholder = 'Служебный канал только для чтения';
       messageInput.disabled = true;
-    }
-    if (btnSendMessage) {
-      btnSendMessage.disabled = true;
-      btnSendMessage.style.opacity = '0.3';
+      messageInput.style.height = '24px';
     }
     return;
   }
@@ -459,13 +478,17 @@ function setChatHeaderData(channel) {
     activeChatAvatar.style.background = (channel.is_e2ee && channel.type !== 'saved') ? 'linear-gradient(135deg, #10b981, #059669)' : 'var(--primary-red-accent)';
   }
 
+  if (btnAttachFile) btnAttachFile.style.display = 'inline-flex';
+  if (btnSendMessage) {
+    btnSendMessage.style.display = 'flex';
+    btnSendMessage.disabled = false;
+    btnSendMessage.style.opacity = '1';
+  }
+  if (inputCapsule) inputCapsule.classList.remove('system-mode');
   if (messageInput) {
     messageInput.placeholder = 'Написать сообщение...';
     messageInput.disabled = false;
-  }
-  if (btnSendMessage) {
-    btnSendMessage.disabled = false;
-    btnSendMessage.style.opacity = '1';
+    resetInputHeight();
   }
 
   const isDirect = channel.type === 'direct';
@@ -747,8 +770,18 @@ export function scrollToOriginalMessage(msgId) {
   if (!msgId) return;
   const domId = getMsgDomId(msgId);
   const target = document.getElementById(domId);
-  if (target) {
-    target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  const container = document.getElementById('messagesContainer');
+  if (target && container) {
+    const containerRect = container.getBoundingClientRect();
+    const targetRect = target.getBoundingClientRect();
+    const relativeTop = (targetRect.top - containerRect.top) + container.scrollTop;
+    const targetScrollTop = relativeTop - (container.clientHeight / 2) + (target.clientHeight / 2);
+
+    container.scrollTo({
+      top: Math.max(0, targetScrollTop),
+      behavior: 'smooth'
+    });
+
     target.style.animation = 'none';
     target.classList.remove('highlight-quote');
     void target.offsetWidth;
@@ -1337,10 +1370,9 @@ export async function sendMessage() {
 
   const inputCapsule = messageInput.closest('.input-capsule') || messageInput;
 
-  // Очищаем поле ввода моментально и сбрасываем высоту капсулы
+  // Очищаем поле ввода моментально и плавно сбрасываем высоту капсулы
   messageInput.value = '';
-  messageInput.style.height = '22px';
-  messageInput.classList.remove('scrollable');
+  resetInputHeight();
 
   const replyingTo = currentReplyingMessage ? {
     id: currentReplyingMessage.id,
@@ -1699,9 +1731,14 @@ export function initChatEvents() {
   if (btnSendMessage) btnSendMessage.addEventListener('click', sendMessage);
   if (messageInput) {
     const adjustInputHeight = () => {
-      messageInput.style.height = '22px';
+      if (!messageInput) return;
+      if (!messageInput.value || messageInput.value.trim() === '') {
+        resetInputHeight();
+        return;
+      }
+      messageInput.style.height = '36px';
       const scrollH = messageInput.scrollHeight;
-      const targetH = Math.min(Math.max(scrollH, 22), 220); // 10 строк максимум (22px * 10)
+      const targetH = Math.min(Math.max(scrollH, 36), 220); // максимум 220px
       messageInput.style.height = `${targetH}px`;
       if (scrollH > 220) {
         messageInput.classList.add('scrollable');

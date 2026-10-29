@@ -26,13 +26,24 @@ if (fs.existsSync(cargoPath)) {
   console.log('✓ Updated src-tauri/Cargo.toml');
 }
 
-// 3. Обновляем index.html (в настройках)
+// 3. Обновляем index.html (в настройках, шапке входа и глобальной переменной)
 const indexHtmlPath = path.join(clientDir, 'index.html');
 if (fs.existsSync(indexHtmlPath)) {
   let html = fs.readFileSync(indexHtmlPath, 'utf8');
   html = html.replace(/v\d+\.\d+\.\d+[^<]*\(Release\)/g, `v${newVersion} (Release)`);
+  html = html.replace(/<div class="auth-version-sub">v\d+\.\d+\.\d+<\/div>/g, `<div class="auth-version-sub">v${newVersion}</div>`);
+  html = html.replace(/window\.SHARADA_VERSION\s*=\s*'[^']*'/g, `window.SHARADA_VERSION = '${newVersion}'`);
   fs.writeFileSync(indexHtmlPath, html);
   console.log('✓ Updated index.html');
+}
+
+// 4. Обновляем js/updater.js
+const updaterPath = path.join(clientDir, 'js', 'updater.js');
+if (fs.existsSync(updaterPath)) {
+  let upd = fs.readFileSync(updaterPath, 'utf8');
+  upd = upd.replace(/return '\d+\.\d+\.\d+';/g, `return '${newVersion}';`);
+  fs.writeFileSync(updaterPath, upd);
+  console.log('✓ Updated js/updater.js');
 }
 
 console.log(`[Version Bump] Successfully synchronized version ${newVersion}!`);

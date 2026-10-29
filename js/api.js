@@ -2,13 +2,23 @@
  * Sharada Messenger - API & Global State Module
  */
 
-export const SERVER_HOST = 'out.shamper.ru';
-export const API_BASE = 'https://' + SERVER_HOST;
-export const WS_BASE = 'wss://' + SERVER_HOST;
-
 export function resolveServerHost() {
-  return SERVER_HOST;
+  if (typeof window !== 'undefined' && window.getSharadaServerHost) {
+    return window.getSharadaServerHost();
+  }
+  return 'out.shamper.ru';
 }
+
+export function resolveProto(host) {
+  if (typeof window !== 'undefined' && window.getSharadaProto) {
+    return window.getSharadaProto(host);
+  }
+  return (host && host.includes('shamper.ru')) ? 'https://' : 'http://';
+}
+
+export const SERVER_HOST = resolveServerHost();
+export const API_BASE = resolveProto(SERVER_HOST) + SERVER_HOST;
+export const WS_BASE = (API_BASE.startsWith('https:') ? 'wss://' : 'ws://') + SERVER_HOST;
 
 // Постоянный уникальный идентификатор устройства (предотвращает размножение сессий)
 export function getDeviceId() {

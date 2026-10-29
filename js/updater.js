@@ -2,7 +2,13 @@
  * Sharada Messenger - GitHub Release Updater & Changelog Module
  */
 
-const CURRENT_VERSION = '1.2.0';
+export function getCurrentVersion() {
+  if (typeof window !== 'undefined' && window.SHARADA_VERSION) {
+    return window.SHARADA_VERSION;
+  }
+  return '1.3.1';
+}
+
 const GITHUB_REPO = 'sharada-social/client';
 
 export function isNewerVersion(latest, current) {
@@ -18,15 +24,15 @@ export function isNewerVersion(latest, current) {
 }
 
 export function initUpdateChecker() {
-  // Запуск фоновой проверки через 2.5 секунды после старта приложения
+  // Запуск фоновой проверки без блокировки сети
   setTimeout(() => {
     checkGithubUpdatesSilently();
-  }, 2500);
+  }, 3000);
 }
 
 async function checkGithubUpdatesSilently() {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 секунд таймаут
+  const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 секунд максимум в фоне
 
   try {
     const res = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/releases/latest`, {
@@ -48,7 +54,8 @@ async function checkGithubUpdatesSilently() {
     if (skipped === latestVersion) return;
 
     // Сравниваем версии
-    if (isNewerVersion(latestVersion, CURRENT_VERSION)) {
+    const curVer = getCurrentVersion();
+    if (isNewerVersion(latestVersion, curVer)) {
       showUpdateModal(latestVersion, data);
     }
   } catch (err) {
@@ -68,7 +75,7 @@ function showUpdateModal(latestVersion, releaseData) {
   if (!modal) return;
 
   if (subTitle) {
-    subTitle.textContent = `v${CURRENT_VERSION} → v${latestVersion}`;
+    subTitle.textContent = `v${getCurrentVersion()} → v${latestVersion}`;
   }
 
   if (changelog) {

@@ -30,13 +30,19 @@ let onAuthSuccessCallback = null;
 window.showNoAuthDataModal = function(e) {
   if (e) e.preventDefault();
   const modal = document.getElementById('modalNoAuthData');
-  if (modal) modal.classList.remove('hidden');
+  if (modal) {
+    modal.classList.remove('hidden');
+    modal.classList.add('active');
+  }
 };
 
 window.hideNoAuthDataModal = function(e) {
   if (e) e.preventDefault();
   const modal = document.getElementById('modalNoAuthData');
-  if (modal) modal.classList.add('hidden');
+  if (modal) {
+    modal.classList.remove('active');
+    modal.classList.add('hidden');
+  }
 };
 
 // Инициализация 6-значных ячеек TOTP
@@ -180,6 +186,11 @@ export function showLoginStage(stepNum) {
   document.body.classList.add('auth-mode');
   if (authBackdrop) authBackdrop.classList.remove('hidden');
   clearAuthError();
+
+  const verEl = document.querySelector('.auth-version-sub');
+  if (verEl && window.SHARADA_VERSION) {
+    verEl.textContent = `v${window.SHARADA_VERSION}`;
+  }
 
   const prevHeight = authCard ? authCard.offsetHeight : 0;
 
