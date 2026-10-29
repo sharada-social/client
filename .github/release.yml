@@ -1,0 +1,20 @@
+changelog:
+  categories:
+    - title: "Новый функционал"
+      labels:
+        - "feature"
+        - "enhancement"
+    - title: "Фиксы багов"
+      labels:
+        - "fix"
+        - "bug"
+    - title: "Интерфейс и стили"
+      labels:
+        - "ui"
+        - "design"
+    - title: "Безопасность"
+      labels:
+        - "security"
+  exclude:
+    labels:
+      - "skip-changelog"
