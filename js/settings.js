@@ -3,7 +3,7 @@
  */
 import { getCurrentUser, setCurrentUser, setAuthToken, authFetch, escapeHtml } from './api.js';
 import { showAppDialog, setupDropdown } from './modals.js';
-import { formatLastSeen } from './chats.js';
+import { formatLastSeen, cachedChannels } from './chats.js';
 import { initDeveloperPanel, handleDevTriggerClick, isDevModeEnabled } from './developer.js';
 
 // Settings UI Elements
@@ -41,6 +41,15 @@ const previewLifecycle = document.getElementById('previewLifecycle');
 const btnBackLifecycleSubpage = document.getElementById('btnBackLifecycleSubpage');
 const tgTimeOptionsList = document.getElementById('tgTimeOptionsList');
 const tgPolicyOptionsList = document.getElementById('tgPolicyOptionsList');
+
+// Privacy: Время Просмотра & Онлайна
+const rowPrivacyLastSeen = document.getElementById('rowPrivacyLastSeen');
+const previewLastSeenSetting = document.getElementById('previewLastSeenSetting');
+const settingsSubpageLastSeen = document.getElementById('settingsSubpageLastSeen');
+const btnBackLastSeenSubpage = document.getElementById('btnBackLastSeenSubpage');
+const tgLastSeenOptionsList = document.getElementById('tgLastSeenOptionsList');
+const lastSeenExceptionsList = document.getElementById('lastSeenExceptionsList');
+
 const btnAdminRefresh = document.getElementById('btnAdminRefresh');
 
 // Account Profile Inputs & Badges
@@ -85,6 +94,13 @@ const btnAdminCreateUser = document.getElementById('btnAdminCreateUser');
 const createdKeyBox = document.getElementById('createdKeyBox');
 const rawKeyOutput = document.getElementById('rawKeyOutput');
 const adminUsersList = document.getElementById('adminUsersList');
+const adminUsersPagination = document.getElementById('adminUsersPagination');
+const btnAdminUsersPrev = document.getElementById('btnAdminUsersPrev');
+const btnAdminUsersNext = document.getElementById('btnAdminUsersNext');
+const adminUsersPageLabel = document.getElementById('adminUsersPageLabel');
+let adminUsersAll = [];
+let adminUsersCurrentPage = 1;
+const ADMIN_USERS_PAGE_SIZE = 8;
 const adminLogsContainer = document.getElementById('adminLogsContainer');
 
 // Delete Modal Elements
@@ -173,6 +189,127 @@ export function closeLifecycleSubpage() {
 
     setTimeout(() => {
       settingsSectionAccount.classList.remove('tab-fade-in');
+    }, 220);
+  }, 150);
+}
+
+export function getLastSeenConfig() {
+  try {
+    const raw = localStorage.getItem('sharada_privacy_last_seen');
+    if (raw) return JSON.parse(raw);
+  } catch (e) {}
+  return { mode: 'all', exceptions: [] };
+}
+
+export function saveLastSeenConfig(conf) {
+  localStorage.setItem('sharada_privacy_last_seen', JSON.stringify(conf));
+  updateLastSeenUI();
+}
+
+export function updateLastSeenUI() {
+  const conf = getLastSeenConfig();
+  if (previewLastSeenSetting) {
+    const count = (conf.exceptions || []).length;
+    const modeName = conf.mode === 'nobody' ? 'Никто' : 'Все';
+    previewLastSeenSetting.textContent = count > 0 ? `${modeName} (исключений: ${Math.floor(count / 2 || 1)})` : modeName;
+  }
+
+  if (tgLastSeenOptionsList) {
+    tgLastSeenOptionsList.querySelectorAll('.tg-select-item').forEach(item => {
+      item.classList.toggle('selected', item.dataset.mode === conf.mode);
+    });
+  }
+
+  if (lastSeenExceptionsList) {
+    lastSeenExceptionsList.innerHTML = '';
+    const directChannels = (cachedChannels || []).filter(c => c.type === 'direct');
+    if (directChannels.length === 0) {
+      lastSeenExceptionsList.innerHTML = '<div style="padding:14px; color:var(--text-muted); font-size:13px; text-align:center;">У вас пока нет начатых личных диалогов</div>';
+      return;
+    }
+
+    directChannels.forEach(ch => {
+      const isException = (conf.exceptions || []).includes(String(ch.id)) || (conf.exceptions || []).includes(String(ch.name));
+      const row = document.createElement('div');
+      row.className = 'settings-row';
+      row.style.cssText = 'padding:10px 16px; cursor:pointer;';
+
+      const dispName = ch.display_name || ch.name;
+      row.innerHTML = `
+        <div class="settings-row-left" style="gap:12px;">
+          <div class="avatar" style="width:36px; height:36px; font-size:14px;">${escapeHtml(dispName.charAt(0).toUpperCase())}</div>
+          <div class="settings-row-info">
+            <div class="settings-row-title" style="font-size:14px;">${escapeHtml(dispName)}</div>
+            <div class="settings-row-desc" style="font-size:11px;">@${escapeHtml(ch.name)}</div>
+          </div>
+        </div>
+        <input type="checkbox" ${isException ? 'checked' : ''} style="cursor:pointer; width:18px; height:18px; accent-color:var(--primary-red-accent);">
+      `;
+
+      row.addEventListener('click', (e) => {
+        const checkbox = row.querySelector('input[type="checkbox"]');
+        if (e.target !== checkbox) {
+          checkbox.checked = !checkbox.checked;
+        }
+        const curConf = getLastSeenConfig();
+        const idStr = String(ch.id);
+        const nameStr = String(ch.name);
+        if (checkbox.checked) {
+          if (!curConf.exceptions.includes(idStr)) curConf.exceptions.push(idStr);
+          if (!curConf.exceptions.includes(nameStr)) curConf.exceptions.push(nameStr);
+        } else {
+          curConf.exceptions = curConf.exceptions.filter(x => x !== idStr && x !== nameStr);
+        }
+        saveLastSeenConfig(curConf);
+      });
+
+      lastSeenExceptionsList.appendChild(row);
+    });
+  }
+}
+
+export function openLastSeenSubpage() {
+  if (isSubpageOpen || !settingsSubpageLastSeen || !settingsSectionPrivacy) return;
+  isSubpageOpen = true;
+
+  if (settingsNavSubbadge) {
+    settingsNavSubbadge.classList.add('visible');
+  }
+
+  settingsSectionPrivacy.classList.add('tab-fade-out');
+  setTimeout(() => {
+    settingsSectionPrivacy.style.display = 'none';
+    settingsSectionPrivacy.classList.remove('tab-fade-out');
+
+    updateLastSeenUI();
+    settingsSubpageLastSeen.style.display = 'flex';
+    settingsSubpageLastSeen.classList.add('tab-fade-in');
+
+    setTimeout(() => {
+      settingsSubpageLastSeen.classList.remove('tab-fade-in');
+    }, 220);
+  }, 150);
+}
+
+export function closeLastSeenSubpage() {
+  if (!isSubpageOpen || !settingsSubpageLastSeen || !settingsSectionPrivacy) return;
+  isSubpageOpen = false;
+
+  if (settingsNavSubbadge) {
+    settingsNavSubbadge.classList.remove('visible');
+  }
+
+  settingsSubpageLastSeen.classList.add('tab-fade-out');
+  setTimeout(() => {
+    settingsSubpageLastSeen.style.display = 'none';
+    settingsSubpageLastSeen.classList.remove('tab-fade-out');
+
+    updateLastSeenUI();
+    settingsSectionPrivacy.style.display = 'flex';
+    settingsSectionPrivacy.classList.add('tab-fade-in');
+
+    setTimeout(() => {
+      settingsSectionPrivacy.classList.remove('tab-fade-in');
     }, 220);
   }, 150);
 }
@@ -348,6 +485,23 @@ export function initSettings() {
   if (btnAdminRefresh) {
     btnAdminRefresh.addEventListener('click', () => loadAdminData());
   }
+  if (btnAdminUsersPrev) {
+    btnAdminUsersPrev.addEventListener('click', () => {
+      if (adminUsersCurrentPage > 1) {
+        adminUsersCurrentPage--;
+        renderAdminUsersPage();
+      }
+    });
+  }
+  if (btnAdminUsersNext) {
+    btnAdminUsersNext.addEventListener('click', () => {
+      const totalPages = Math.max(1, Math.ceil(adminUsersAll.length / ADMIN_USERS_PAGE_SIZE));
+      if (adminUsersCurrentPage < totalPages) {
+        adminUsersCurrentPage++;
+        renderAdminUsersPage();
+      }
+    });
+  }
 
   // Клик на пункт "Жизненный цикл аккаунта" -> переход на подстраницу в стиле Telegram
   if (rowAccountLifecycle) {
@@ -386,6 +540,32 @@ export function initSettings() {
       });
     });
   }
+
+  // Клик на пункт "Время Просмотра & Онлайна" -> переход на подстраницу
+  if (rowPrivacyLastSeen) {
+    rowPrivacyLastSeen.addEventListener('click', openLastSeenSubpage);
+  }
+
+  // Кнопка назад в подстранице Время Просмотра & Онлайна
+  if (btnBackLastSeenSubpage) {
+    btnBackLastSeenSubpage.addEventListener('click', closeLastSeenSubpage);
+  }
+
+  // Выбор режима "Все" / "Никто"
+  if (tgLastSeenOptionsList) {
+    tgLastSeenOptionsList.querySelectorAll('.tg-select-item').forEach(item => {
+      item.addEventListener('click', () => {
+        const mode = item.dataset.mode;
+        if (mode) {
+          const conf = getLastSeenConfig();
+          conf.mode = mode;
+          saveLastSeenConfig(conf);
+        }
+      });
+    });
+  }
+
+  updateLastSeenUI();
 
   // Выход из учетной записи
   if (btnLogoutSettings) {
@@ -788,9 +968,47 @@ async function loadAdminData() {
 }
 
 function renderAdminUsers(users) {
+  adminUsersAll = Array.isArray(users) ? users : [];
+  adminUsersCurrentPage = 1;
+  renderAdminUsersPage();
+}
+
+function renderAdminUsersPage() {
   if (!adminUsersList) return;
   adminUsersList.innerHTML = '';
-  users.forEach(u => {
+
+  const totalUsers = adminUsersAll.length;
+  const totalPages = Math.max(1, Math.ceil(totalUsers / ADMIN_USERS_PAGE_SIZE));
+
+  if (adminUsersCurrentPage > totalPages) adminUsersCurrentPage = totalPages;
+  if (adminUsersCurrentPage < 1) adminUsersCurrentPage = 1;
+
+  if (adminUsersPagination) {
+    adminUsersPagination.style.display = totalUsers > 0 ? 'flex' : 'none';
+  }
+  if (adminUsersPageLabel) {
+    adminUsersPageLabel.textContent = `Страница ${adminUsersCurrentPage} из ${totalPages}`;
+  }
+  if (btnAdminUsersPrev) {
+    btnAdminUsersPrev.disabled = adminUsersCurrentPage <= 1;
+    btnAdminUsersPrev.style.opacity = adminUsersCurrentPage <= 1 ? '0.4' : '1';
+    btnAdminUsersPrev.style.cursor = adminUsersCurrentPage <= 1 ? 'default' : 'pointer';
+  }
+  if (btnAdminUsersNext) {
+    btnAdminUsersNext.disabled = adminUsersCurrentPage >= totalPages;
+    btnAdminUsersNext.style.opacity = adminUsersCurrentPage >= totalPages ? '0.4' : '1';
+    btnAdminUsersNext.style.cursor = adminUsersCurrentPage >= totalPages ? 'default' : 'pointer';
+  }
+
+  const startIdx = (adminUsersCurrentPage - 1) * ADMIN_USERS_PAGE_SIZE;
+  const pageUsers = adminUsersAll.slice(startIdx, startIdx + ADMIN_USERS_PAGE_SIZE);
+
+  if (pageUsers.length === 0) {
+    adminUsersList.innerHTML = '<div style="color:var(--text-sub); text-align:center; padding:16px;">Список пользователей пуст</div>';
+    return;
+  }
+
+  pageUsers.forEach(u => {
     const row = document.createElement('div');
     row.className = 'settings-row';
 

@@ -9,6 +9,7 @@ import { initNFC } from './nfc.js';
 import { initSettings, setupSettingsUI } from './settings.js';
 import { showAppDialog } from './modals.js';
 import { initConnectionManager, updateHeaderConnectionText, getConnectionState } from './connection.js';
+import { initUpdateChecker } from './updater.js';
 
 const viewChats = document.getElementById('viewChats');
 const viewSettings = document.getElementById('viewSettings');
@@ -252,6 +253,7 @@ async function runStartupSequence() {
   } finally {
     clearTimeout(emergencyTimer);
     hideSplash();
+    initUpdateChecker();
   }
 }
 

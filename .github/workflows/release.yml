@@ -16,9 +16,31 @@ permissions:
 
 jobs:
   # =============================================================
+  # 0. СОЗДАНИЕ РЕЛИЗА С АВТОГЕНЕРАЦИЕЙ ЧЕНДЖЛОГА (RELEASE NOTES)
+  # =============================================================
+  create-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Create GitHub Release with Auto Notes
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/') || inputs.tag_name != ''
+        with:
+          tag_name: ${{ github.ref_name || inputs.tag_name }}
+          name: 'sharada ${{ github.ref_name || inputs.tag_name }}'
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # =============================================================
   # 1. СБОРКА ДЕСКТОПНЫХ ПАКЕТОВ (.exe, .deb, .rpm, .AppImage)
   # =============================================================
   build-desktop:
+    needs: create-release
     strategy:
       fail-fast: false
       matrix:
@@ -76,8 +98,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: ${{ github.ref_name || inputs.tag_name }}
-          releaseName: 'Sharada ${{ github.ref_name || inputs.tag_name }}'
-          releaseBody: 'Автоматический релиз клиента приватной сети Sharada.'
+          releaseName: 'sharada ${{ github.ref_name || inputs.tag_name }}'
           releaseDraft: false
           prerelease: false
 
@@ -85,6 +106,7 @@ jobs:
   # 2. СБОРКА МОБИЛЬНОГО ПАКЕТА ANDROID (.apk)
   # =============================================================
   build-android:
+    needs: create-release
     runs-on: ubuntu-latest
 
     steps:
@@ -154,6 +176,7 @@ jobs:
   # 3. СБОРКА МОБИЛЬНОГО ПАКЕТА IOS (.ipa - Unsigned для AltStore/TrollStore)
   # =============================================================
   build-ios:
+    needs: create-release
     runs-on: macos-14
 
     steps:

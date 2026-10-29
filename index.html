@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Sharada — Приватная сеть</title>
+  <title>sharada — Приватная сеть</title>
   <link rel="stylesheet" href="style.css?v=5.3.0">
 </head>
 <body>
@@ -101,52 +101,59 @@
 
     <div class="auth-card" id="authCard">
       
-      <!-- Шапка карточки -->
-      <div class="auth-header">
-        <div class="auth-logo">
-          <svg viewBox="0 0 24 24"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11v8.8z"/></svg>
+      <!-- Шапка карточки входа -->
+      <div class="auth-header-centered">
+        <div class="auth-logo-star">
+          <svg viewBox="0 0 24 24" class="sharada-star-logo-icon">
+            <path d="M12 2L14.4 9.6L22 12L14.4 14.4L12 22L9.6 14.4L2 12L9.6 9.6L12 2Z"/>
+          </svg>
         </div>
-        <div>
-          <h2 class="auth-brand-name">sharada</h2>
-          <div class="auth-brand-desc">Закрытая приватная сеть</div>
-        </div>
+        <h2 class="auth-title">Вход в sharada</h2>
+        <div class="auth-version-sub">v1.2.0</div>
       </div>
 
       <!-- Сообщение об ошибке -->
       <div id="authErrorMsg" class="auth-error-msg"></div>
 
-      <!-- ШАГ 1: Ввод Username и Ключа (Обернут в <form> для автосохранения паролей в браузере) -->
-      <!-- ШАГ 1: Ввод Username и Ключа (Обернут в <form> для автосохранения паролей в браузере) -->
+      <!-- ШАГ 1: Имя пользователя и пароль (ключ) -->
       <form id="authStep1" class="auth-step" onsubmit="event.preventDefault(); window.sharadaSubmitStep1 && window.sharadaSubmitStep1(event); return false;" autocomplete="on">
         <div class="auth-input-group">
           <label class="auth-label" for="loginUsername">Имя пользователя</label>
-          <input type="text" id="loginUsername" name="username" class="auth-input" placeholder="например, admin или antonio" autocomplete="username" required onkeydown="if(event.key==='Enter'){event.preventDefault(); var p=document.getElementById('loginPassword'); if(p) p.focus();}">
+          <input type="text" id="loginUsername" name="username" class="auth-input" placeholder="Имя пользователя" autocomplete="username" required onkeydown="if(event.key==='Enter'){event.preventDefault(); var p=document.getElementById('loginPassword'); if(p) p.focus();}">
         </div>
 
         <div class="auth-input-group">
-          <label class="auth-label" for="loginPassword">Ключ доступа (длинный пароль)</label>
-          <input type="password" id="loginPassword" name="password" class="auth-input" placeholder="Введите полученный ключ" autocomplete="current-password" required onkeydown="if(event.key==='Enter'){event.preventDefault(); window.sharadaSubmitStep1 && window.sharadaSubmitStep1(event);}">
+          <label class="auth-label" for="loginPassword">Пароль (ключ)</label>
+          <input type="password" id="loginPassword" name="password" class="auth-input" placeholder="Пароль (ключ)" autocomplete="current-password" required onkeydown="if(event.key==='Enter'){event.preventDefault(); window.sharadaSubmitStep1 && window.sharadaSubmitStep1(event);}">
         </div>
 
-        <button type="button" id="btnStep1Next" class="auth-btn" onclick="window.sharadaSubmitStep1 && window.sharadaSubmitStep1(event)">
-          <span>Далее</span>
-          <svg style="width:18px; height:18px; fill:currentColor;" viewBox="0 0 24 24"><path d="M12 4l-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8z"/></svg>
+        <button type="submit" id="btnStep1Next" class="auth-btn auth-btn-full" onclick="window.sharadaSubmitStep1 && window.sharadaSubmitStep1(event)">
+          <span>Войти</span>
         </button>
+
+        <div class="auth-no-data-link-wrap">
+          <a href="javascript:void(0)" id="btnNoAuthData" class="auth-no-data-link" onclick="window.showNoAuthDataModal && window.showNoAuthDataModal(event)">У меня нет данных</a>
+        </div>
       </form>
 
-      <!-- ШАГ 2: Ввод TOTP кода (для активного аккаунта) -->
+      <!-- ШАГ 2: Ввод TOTP кода (6 отдельных ячеек) -->
       <form id="authStepTOTP" class="auth-step hidden-step" onsubmit="event.preventDefault(); window.sharadaSubmitStep2 && window.sharadaSubmitStep2(event); return false;">
-        <div style="font-size:14px; color:var(--text-muted); line-height:1.4;">
-          Вход под аккаунтом <b id="totpAccountLabel" style="color:#fff;"></b>. Введите одноразовый 6-значный код из приложения аутентификации:
+        <div class="auth-step-instruction">
+          Вход под аккаунтом <b id="totpAccountLabel" style="color:#fff;"></b>.<br>Введите 6-значный код из Authenticator:
         </div>
 
-        <div class="auth-input-group">
-          <label class="auth-label" for="loginTotpCode">Код подтверждения (TOTP)</label>
-          <input type="text" id="loginTotpCode" name="totp_code" class="auth-input" placeholder="000 000" maxlength="6" style="text-align:center; font-size:24px; letter-spacing:6px;" autocomplete="one-time-code" onkeydown="if(event.key==='Enter'){event.preventDefault(); window.sharadaSubmitStep2 && window.sharadaSubmitStep2(event);}" required>
+        <div class="totp-digit-row" id="totpDigitRow">
+          <input type="text" inputmode="numeric" maxlength="1" class="totp-digit-box" data-idx="0" autocomplete="off">
+          <input type="text" inputmode="numeric" maxlength="1" class="totp-digit-box" data-idx="1" autocomplete="off">
+          <input type="text" inputmode="numeric" maxlength="1" class="totp-digit-box" data-idx="2" autocomplete="off">
+          <input type="text" inputmode="numeric" maxlength="1" class="totp-digit-box" data-idx="3" autocomplete="off">
+          <input type="text" inputmode="numeric" maxlength="1" class="totp-digit-box" data-idx="4" autocomplete="off">
+          <input type="text" inputmode="numeric" maxlength="1" class="totp-digit-box" data-idx="5" autocomplete="off">
         </div>
+        <input type="hidden" id="loginTotpCode" name="totp_code">
 
-        <button type="button" id="btnStep2Login" class="auth-btn" onclick="window.sharadaSubmitStep2 && window.sharadaSubmitStep2(event)">
-          <span>Войти в сеть</span>
+        <button type="submit" id="btnStep2Login" class="auth-btn auth-btn-full" onclick="window.sharadaSubmitStep2 && window.sharadaSubmitStep2(event)">
+          <span>Войти</span>
         </button>
 
         <button type="button" id="btnBackToStep1" class="auth-btn-secondary" onclick="window.sharadaBackToStep1 && window.sharadaBackToStep1(event)">
@@ -169,19 +176,20 @@
           <code id="totpSecretText" style="display:block; margin-top:4px; font-size:13px; color:#c084fc; word-break:break-all; user-select:all;"></code>
         </div>
 
-        <div class="auth-input-group" style="margin-top:6px;">
-          <input type="text" id="setupTotpInput" name="setup_totp_code" class="auth-input" placeholder="000000" maxlength="6" style="text-align:center; font-size:20px; letter-spacing:4px;" autocomplete="one-time-code" onkeydown="if(event.key==='Enter'){event.preventDefault(); window.sharadaSubmitStep3 && window.sharadaSubmitStep3(event);}" required>
+        <div class="totp-digit-row" id="setupTotpDigitRow" style="margin:12px 0;">
+          <input type="text" inputmode="numeric" maxlength="1" class="totp-digit-box setup-totp-box" data-idx="0" autocomplete="off">
+          <input type="text" inputmode="numeric" maxlength="1" class="totp-digit-box setup-totp-box" data-idx="1" autocomplete="off">
+          <input type="text" inputmode="numeric" maxlength="1" class="totp-digit-box setup-totp-box" data-idx="2" autocomplete="off">
+          <input type="text" inputmode="numeric" maxlength="1" class="totp-digit-box setup-totp-box" data-idx="3" autocomplete="off">
+          <input type="text" inputmode="numeric" maxlength="1" class="totp-digit-box setup-totp-box" data-idx="4" autocomplete="off">
+          <input type="text" inputmode="numeric" maxlength="1" class="totp-digit-box setup-totp-box" data-idx="5" autocomplete="off">
         </div>
+        <input type="hidden" id="setupTotpInput" name="setup_totp_code">
 
-        <button type="button" id="btnConfirm2FASetup" class="auth-btn" style="width:100%;" onclick="window.sharadaSubmitStep3 && window.sharadaSubmitStep3(event)">
-          Подтвердить и активировать
+        <button type="submit" id="btnConfirm2FASetup" class="auth-btn auth-btn-full" onclick="window.sharadaSubmitStep3 && window.sharadaSubmitStep3(event)">
+          <span>Подтвердить и активировать</span>
         </button>
       </form>
-
-      <div style="margin-top:14px; text-align:center; font-size:12px; color:var(--text-muted);">
-        <span>Сервер: </span>
-        <a href="javascript:void(0)" onclick="window.promptChangeServerHost()" id="authServerHostLink" style="color:var(--primary-red-accent); font-family:monospace; text-decoration:underline;" title="Нажмите, чтобы изменить адрес сервера">out.shamper.ru</a>
-      </div>
 
     </div>
   </div>
@@ -264,8 +272,12 @@
           </div>
 
           <!-- Активное окно чата -->
-          <div id="activeChatWindow" style="display:none; flex:1; flex-direction:column; height:100%; position:relative;">
-            <div class="chat-window-header">
+          <div id="activeChatWindow" style="display:none; flex:1; flex-direction:column; height:100%; position:relative; overflow:hidden;">
+            <!-- Плавный блюр вверх для верхней капсулы чата -->
+            <div class="chat-header-blur-shield"></div>
+
+            <!-- Верхняя плавающая капсула чата -->
+            <div class="chat-window-header chat-header-capsule">
               <div class="chat-header-user">
                 <!-- Кнопка назад для мобилки (как в Telegram) -->
                 <button id="btnBackToSidebarMobile" class="chat-back-mobile-btn" title="Назад к чатам">
@@ -284,13 +296,13 @@
                 </div>
               </div>
               <div class="chat-header-actions" style="display:flex; align-items:center; gap:8px;">
-                <button id="btnStartCall" class="icon-btn" title="Аудиозвонок" style="color:var(--text-muted);">
+                <button id="btnStartCall" class="icon-btn chat-action-btn" title="Аудиозвонок" style="color:var(--text-muted);">
                   <svg viewBox="0 0 24 24" style="width:20px; height:20px;" fill="none">
                     <path d="M10.0376 5.31617L10.6866 6.4791C11.2723 7.52858 11.0372 8.90532 10.1147 9.8278C10.1147 9.8278 10.1147 9.8278 10.1147 9.8278C10.1146 9.82792 8.99588 10.9468 11.0245 12.9755C13.0525 15.0035 14.1714 13.8861 14.1722 13.8853C14.1722 13.8853 14.1722 13.8853 14.1722 13.8853C15.0947 12.9628 16.4714 12.7277 17.5209 13.3134L18.6838 13.9624C20.2686 14.8468 20.4557 17.0692 19.0628 18.4622C18.2258 19.2992 17.2004 19.9505 16.0669 19.9934C14.1588 20.0658 10.9183 19.5829 7.6677 16.3323C4.41713 13.0817 3.93421 9.84122 4.00655 7.93309C4.04952 6.7996 4.7008 5.77423 5.53781 4.93723C6.93076 3.54428 9.15317 3.73144 10.0376 5.31617Z" fill="currentColor"/>
                     <path d="M13.2595 1.87983C13.3257 1.47094 13.7122 1.19357 14.1211 1.25976C14.1464 1.26461 14.2279 1.27983 14.2705 1.28933C14.3559 1.30834 14.4749 1.33759 14.6233 1.38082C14.9201 1.46726 15.3347 1.60967 15.8323 1.8378C16.8286 2.29456 18.1544 3.09356 19.5302 4.46936C20.906 5.84516 21.705 7.17097 22.1617 8.16725C22.3899 8.66487 22.5323 9.07947 22.6187 9.37625C22.6619 9.52466 22.6912 9.64369 22.7102 9.72901C22.7197 9.77168 22.7267 9.80594 22.7315 9.83125L22.7373 9.86245C22.8034 10.2713 22.5286 10.6739 22.1197 10.7401C21.712 10.8061 21.3279 10.53 21.2601 10.1231C21.258 10.1121 21.2522 10.0828 21.2461 10.0551C21.2337 9.9997 21.2124 9.91188 21.1786 9.79572C21.1109 9.56339 20.9934 9.21806 20.7982 8.79238C20.4084 7.94207 19.7074 6.76789 18.4695 5.53002C17.2317 4.29216 16.0575 3.59117 15.2072 3.20134C14.7815 3.00618 14.4362 2.88865 14.2038 2.82097C14.0877 2.78714 13.9417 2.75363 13.8863 2.7413C13.4793 2.67347 13.1935 2.28755 13.2595 1.87983Z" fill="currentColor"/>
                   </svg>
                 </button>
-                <button id="btnDeleteCurrentChat" class="icon-btn" title="Удалить чат" style="display:none; color:#ef4444;">
+                <button id="btnDeleteCurrentChat" class="icon-btn chat-action-btn hidden" title="Удалить чат" style="color:#ef4444;">
                   <svg viewBox="0 0 24 24" fill="none">
                     <path d="M2.75 6.16667C2.75 5.70644 3.09538 5.33335 3.52143 5.33335L6.18567 5.3329C6.71502 5.31841 7.18202 4.95482 7.36214 4.41691C7.36688 4.40277 7.37232 4.38532 7.39185 4.32203L7.50665 3.94993C7.5769 3.72179 7.6381 3.52303 7.72375 3.34536C8.06209 2.64349 8.68808 2.1561 9.41147 2.03132C9.59457 1.99973 9.78848 1.99987 10.0111 2.00002H13.4891C13.7117 1.99987 13.9056 1.99973 14.0887 2.03132C14.8121 2.1561 15.4381 2.64349 15.7764 3.34536C15.8621 3.52303 15.9233 3.72179 15.9935 3.94993L16.1083 4.32203C16.1279 4.38532 16.1333 4.40277 16.138 4.41691C16.3182 4.95482 16.8778 5.31886 17.4071 5.33335H19.9786C20.4046 5.33335 20.75 5.70644 20.75 6.16667C20.75 6.62691 20.4046 7 19.9786 7H3.52143C3.09538 7 2.75 6.62691 2.75 6.16667Z" fill="currentColor"/>
                     <path d="M11.6068 21.9998H12.3937C15.1012 21.9998 16.4549 21.9998 17.3351 21.1366C18.2153 20.2734 18.3054 18.8575 18.4855 16.0256L18.745 11.945C18.8427 10.4085 18.8916 9.6402 18.45 9.15335C18.0084 8.6665 17.2628 8.6665 15.7714 8.6665H8.22905C6.73771 8.6665 5.99204 8.6665 5.55047 9.15335C5.10891 9.6402 5.15777 10.4085 5.25549 11.945L5.515 16.0256C5.6951 18.8575 5.78515 20.2734 6.66534 21.1366C7.54553 21.9998 8.89927 21.9998 11.6068 21.9998Z" fill="currentColor"/>
@@ -302,12 +314,24 @@
             <!-- Список сообщений -->
             <div class="messages-container" id="messagesContainer"></div>
 
-            <!-- Поле ввода сообщения -->
-            <div class="message-input-area">
+            <!-- Центрированный индикатор загрузки Material Design 3 (> 5 сек) -->
+            <div id="chatLoadingSpinnerMD3" class="chat-loading-spinner-wrap">
+              <div class="md3-circular-progress" style="width:42px; height:42px; color:var(--primary-red-accent);">
+                <svg viewBox="0 0 50 50">
+                  <circle cx="25" cy="25" r="20" fill="none" stroke-width="4"></circle>
+                </svg>
+              </div>
+            </div>
+
+            <!-- Плавный блюр вниз для нижней капсулы ввода -->
+            <div class="chat-footer-blur-shield"></div>
+
+            <!-- Поле ввода сообщения (парящая капсула) -->
+            <div class="message-input-area message-input-floating">
               <!-- Всплывающий стек отдельных облачков печатания (по типам действий) -->
               <div id="chatTypingContainer" class="chat-typing-container"></div>
 
-              <!-- Полоса предпросмотра ответа на сообщение -->
+              <!-- Полоса предпросмотра ответа на сообщение (строго над строкой ввода) -->
               <div id="replyPreviewBar" class="reply-preview-bar" style="display:none;">
                 <div class="reply-bar-accent"></div>
                 <div class="reply-bar-body">
@@ -319,13 +343,14 @@
                 </button>
               </div>
 
+              <!-- Плавающая капсула ввода с многострочным полем -->
               <div class="input-capsule">
                 <button type="button" id="btnAttachFile" class="icon-btn" title="Прикрепить файл" style="margin-right:6px; color:var(--text-muted); display:inline-flex; align-items:center; justify-content:center;">
                   <svg viewBox="0 0 24 24" style="width:20px; height:20px;" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
                     <path d="M7.9175 17.8068L15.8084 10.2535C16.7558 9.34668 16.7558 7.87637 15.8084 6.96951C14.861 6.06265 13.325 6.06265 12.3776 6.96951L4.54387 14.4681C2.74382 16.1911 2.74382 18.9847 4.54387 20.7077C6.34391 22.4308 9.26237 22.4308 11.0624 20.7077L19.0105 13.0997C21.6632 10.5605 21.6632 6.44362 19.0105 3.90441C16.3578 1.3652 12.0569 1.3652 9.40419 3.90441L3 10.0346"/>
                   </svg>
                 </button>
-                <input type="text" id="messageInput" placeholder="Напишите сообщение..." autocomplete="off">
+                <textarea id="messageInput" rows="1" placeholder="Напишите сообщение..." autocomplete="off"></textarea>
                 <button id="btnSendMessage" class="send-btn" title="Отправить">
                   <svg viewBox="0 0 24 24" fill="none"><path d="M4.49746 20.835L21.0072 13.4725C22.3309 12.8822 22.3309 11.1178 21.0072 10.5275L4.49746 3.16496C3.00163 2.49789 1.45006 3.97914 2.19099 5.36689L5.34302 11.2706C5.58817 11.7298 5.58818 12.2702 5.34302 12.7294L2.19099 18.6331C1.45007 20.0209 3.00163 21.5021 4.49746 20.835Z" fill="currentColor"/></svg>
                 </button>
@@ -411,8 +436,13 @@
 
             <!-- Футер настроек: Название и версия (триггер 5 кликов для разработчиков) -->
             <div class="settings-sidebar-footer" id="settingsDevTrigger" title="Нажмите 5 раз для режима разработчика">
-              <div class="settings-brand-text">sharada</div>
-              <div class="settings-version-text">v1.2.0 (Release)</div>
+              <div class="settings-brand-row">
+                <svg viewBox="0 0 24 24" class="settings-sharada-logo-icon">
+                  <path d="M12 2L14.4 9.6L22 12L14.4 14.4L12 22L9.6 14.4L2 12L9.6 9.6L12 2Z"/>
+                </svg>
+                <div class="settings-brand-text">sharada</div>
+              </div>
+              <div class="settings-version-text">v1.3.0 (Release)</div>
               <div id="devStepsRemaining" class="dev-steps-pill" style="display:none;"></div>
             </div>
           </aside>
@@ -571,6 +601,25 @@
                   </div>
                 </div>
               </div>
+
+              <!-- Приватность: Время Просмотра & Онлайна -->
+              <div class="settings-section">
+                <div class="settings-section-title">Приватность</div>
+                <div class="settings-group">
+                  <div class="settings-row" id="rowPrivacyLastSeen" style="cursor:pointer;">
+                    <div class="settings-row-left">
+                      <div class="tg-icon-box tg-icon-silver">
+                        <img src="assets/icons/settings/clock.svg" style="width:20px; height:20px;" alt="clock">
+                      </div>
+                      <div class="settings-row-info">
+                        <div class="settings-row-title">Время Просмотра & Онлайна</div>
+                        <div class="settings-row-desc" id="previewLastSeenSetting">Все</div>
+                      </div>
+                    </div>
+                    <svg style="width:18px; height:18px; fill:var(--text-muted);" viewBox="0 0 24 24"><path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z"/></svg>
+                  </div>
+                </div>
+              </div>
             </div>
 
             <!-- РАЗДЕЛ: ДАННЫЕ И ПАМЯТЬ (ХРАНИЛИЩЕ И КЭШ) -->
@@ -672,6 +721,11 @@
               <div class="settings-section">
                 <div class="settings-section-title">Пользователи сообщества</div>
                 <div id="adminUsersList" class="settings-group"></div>
+                <div class="admin-users-pagination" id="adminUsersPagination" style="display:flex; justify-content:space-between; align-items:center; padding:12px 6px 4px; margin-top:6px;">
+                  <button type="button" id="btnAdminUsersPrev" class="action-pill-btn" style="padding:6px 16px; font-size:13px;">← Назад</button>
+                  <span id="adminUsersPageLabel" style="font-size:13px; font-weight:700; color:var(--text-muted);">Страница 1 из 1</span>
+                  <button type="button" id="btnAdminUsersNext" class="action-pill-btn" style="padding:6px 16px; font-size:13px;">Вперёд →</button>
+                </div>
               </div>
 
               <!-- Аудит логи -->
@@ -732,6 +786,46 @@
                       При истечении заданного времени вы не сможете войти в аккаунт пока его не разархивирует администратор sharada. При первом уровне траста аккаунт будет удалён через 6 месяцев архивации, при втором уровне траста аккаунт архивируется навсегда с возможностью архивации администратором.
                     </div>
                   </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- ПОДСТРАНИЦА НАСТРОЙКИ: ВРЕМЯ ПРОСМОТРА & ОНЛАЙНА (TELEGRAM-STYLE) -->
+            <div id="settingsSubpageLastSeen" class="settings-tab-pane" style="display:none; flex-direction:column; gap:22px;">
+              <div class="settings-subpage-header">
+                <button id="btnBackLastSeenSubpage" class="settings-back-btn" title="Назад к настройкам">
+                  <svg viewBox="0 0 24 24" fill="none"><path d="M20 11.25C20.4142 11.25 20.75 11.5858 20.75 12C20.75 12.4142 20.4142 12.75 20 12.75H10.75L10.75 18C10.75 18.3034 10.5673 18.5768 10.287 18.6929C10.0068 18.809 9.68417 18.7449 9.46967 18.5304L3.46967 12.5304C3.32902 12.3897 3.25 12.1989 3.25 12C3.25 11.8011 3.32902 11.6103 3.46967 11.4697L9.46967 5.46969C9.68417 5.25519 10.0068 5.19103 10.287 5.30711C10.5673 5.4232 10.75 5.69668 10.75 6.00002L10.75 11.25H20Z" fill="currentColor"/></svg>
+                  <span>Назад</span>
+                </button>
+                <h2 class="panel-title" style="margin:0; font-size:24px;">Время Просмотра & Онлайна</h2>
+              </div>
+
+              <!-- Блок: Кто видит -->
+              <div class="settings-section">
+                <div class="settings-section-title">КТО ВИДИТ МОЁ ВРЕМЯ ОНЛАЙНА И ПРОЧТЕНИЯ</div>
+                <div class="settings-group tg-select-group" id="tgLastSeenOptionsList">
+                  <div class="tg-select-item" data-mode="all">
+                    <span class="tg-select-label">Все</span>
+                    <span class="tg-select-radio"></span>
+                  </div>
+                  <div class="tg-select-item" data-mode="nobody">
+                    <span class="tg-select-label">Никто</span>
+                    <span class="tg-select-radio"></span>
+                  </div>
+                </div>
+                <div style="padding-left:14px; color:var(--text-muted); font-size:13px; line-height:1.45;">
+                  Если вы отключите показ времени своего последнего онлайна и времени прочтения сообщения - вы тоже не будете видеть когда прочитали ваше сообщение
+                </div>
+              </div>
+
+              <!-- Блок: Исключения -->
+              <div class="settings-section" style="margin-top:4px;">
+                <div class="settings-section-title">ДОБАВИТЬ ИСКЛЮЧЕНИЯ</div>
+                <div class="settings-group" id="lastSeenExceptionsList" style="padding:4px 0;">
+                  <!-- Динамический список контактов -->
+                </div>
+                <div style="padding-left:14px; color:var(--text-muted); font-size:12px; line-height:1.4;">
+                  Для выбранных собеседников всегда будет действовать противоположное правило.
                 </div>
               </div>
             </div>
@@ -922,13 +1016,30 @@
     </footer>
   </div>
 
-  <!-- Кружок переподключения на уровне навбара слева с краю экрана (всегда поверх всех страниц) -->
+  <!-- Кружок переподключения Material Design 3 на уровне навбара слева с краю экрана -->
   <button type="button" id="connStatusCircle" class="conn-status-circle visible" title="Подключение к серверу... Нажмите для настройки соединения">
-    <svg class="conn-spinner-icon" viewBox="0 0 24 24" fill="none">
-      <circle cx="12" cy="12" r="10" stroke="rgba(255,255,255,0.2)" stroke-width="3"/>
-      <path d="M12 2C6.47715 2 2 6.47715 2 12" stroke="#ffffff" stroke-width="3" stroke-linecap="round"/>
-    </svg>
+    <div class="md3-circular-progress" style="width:20px; height:20px; color:#ffffff;">
+      <svg viewBox="0 0 50 50">
+        <circle cx="25" cy="25" r="20" fill="none" stroke-width="5"></circle>
+      </svg>
+    </div>
   </button>
+
+  <!-- МОДАЛКА: "У МЕНЯ НЕТ ДАННЫХ" -->
+  <div id="modalNoAuthData" class="modal-overlay hidden">
+    <div class="modal-box" style="max-width:440px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+        <h2 class="modal-title" style="font-size:20px; font-weight:800;">Приватная сеть</h2>
+        <button type="button" id="btnCloseNoAuthData" class="icon-btn" onclick="window.hideNoAuthDataModal && window.hideNoAuthDataModal(event)">✕</button>
+      </div>
+      <div style="line-height:1.6; font-size:14px; color:#cccccc; margin-bottom:20px;">
+        Доступ в этот мессенджер имеет только ограниченный круг лиц. Всем пользователям администратор сам рассылает юзернеймы с ключами. Если вам не писал shamper или же Кемпер - увы, пока вы не достойны сюда попасть... :(
+      </div>
+      <button type="button" class="btn-silver" style="width:100%; border-radius:18px; padding:12px;" onclick="window.hideNoAuthDataModal && window.hideNoAuthDataModal(event)">
+        Понятно
+      </button>
+    </div>
+  </div>
 
   <!-- =======================================================
        МОДАЛКА: "НОВОЕ СООБЩЕНИЕ" (ВМЕСТО prompt)
@@ -1541,13 +1652,50 @@
         <button type="button" class="reaction-emoji-btn" data-reaction="😂" title="😂">😂</button>
         <button type="button" class="reaction-emoji-btn" data-reaction="😮" title="😮">😮</button>
       </div>
-      <button type="button" id="btnActionReply" class="message-action-reply-btn">
-        <svg viewBox="0 0 24 24" class="action-reply-icon">
-          <path d="M10 9V5L3 12L10 19V14.9C15 14.9 18.5 16.5 21 20C20 15 17 10 10 9Z" fill="currentColor"/>
-        </svg>
-        <span>Ответить</span>
-      </button>
+      <div class="message-action-buttons-group">
+        <button type="button" id="btnActionReply" class="message-action-reply-btn">
+          <img src="assets/icons/chat/reply.svg" class="action-reply-icon" alt="reply">
+          <span>Ответить</span>
+        </button>
+        <button type="button" id="btnActionCopy" class="message-action-reply-btn" style="margin-top:4px;">
+          <img src="assets/icons/chat/copy.svg" class="action-reply-icon" alt="copy">
+          <span>Копировать</span>
+        </button>
+      </div>
     </div>
+  </div>
+
+  <!-- Модальное окно "Доступно обновление!" -->
+  <div id="modalAppUpdate" class="modal-backdrop hidden" style="z-index: 10000;">
+    <div class="modal-card update-modal-card">
+      <div class="update-modal-header">
+        <img src="assets/icons/app-icon.png" class="update-modal-icon" alt="sharada">
+        <div class="update-modal-brand">sharada</div>
+        <div class="update-modal-subtitle" id="updateVersionSubtitle">v1.2.0 → v1.2.1</div>
+      </div>
+      <div class="update-modal-body">
+        <div class="update-changelog-title">Что нового:</div>
+        <pre class="update-changelog-content" id="updateChangelogContent"></pre>
+      </div>
+      <div class="update-modal-footer">
+        <button type="button" id="btnDownloadUpdate" class="btn-primary update-btn-download">Скачать обновление</button>
+        <button type="button" id="btnSkipUpdateVersion" class="update-btn-skip">Пропустить версию</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Плавающий виджет загрузки обновления (слева снизу) -->
+  <div id="appUpdateWidget" class="app-update-widget" style="display:none;">
+    <div class="update-widget-circle">
+      <svg class="update-widget-spinner-svg" viewBox="0 0 44 44">
+        <circle class="update-widget-track" cx="22" cy="22" r="18" fill="none" stroke-width="3"/>
+        <circle id="updateWidgetRingProgress" class="update-widget-progress" cx="22" cy="22" r="18" fill="none" stroke-width="3"/>
+      </svg>
+      <div class="update-widget-inner-dot">
+        <img src="assets/icons/app-icon.png" alt="icon" class="update-widget-dot-icon">
+      </div>
+    </div>
+    <span id="updateWidgetText" class="update-widget-text"></span>
   </div>
 
   <script type="module" src="js/app.js"></script>

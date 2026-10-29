@@ -1,7 +1,4 @@
-/**
- * Sharada Messenger - Authentication Module (Microsoft-style transitions)
- */
-import { API_BASE, getAuthToken, setAuthToken, getCurrentUser, setCurrentUser, authFetch } from './api.js';
+import { API_BASE, getAuthToken, setAuthToken, getCurrentUser, setCurrentUser, authFetch, getDeviceId } from './api.js';
 
 const authBackdrop = document.getElementById('authBackdrop');
 const authCard = document.getElementById('authCard');
@@ -29,9 +26,88 @@ let pendingPassword = '';
 let tempSessionToken = '';
 let onAuthSuccessCallback = null;
 
+// Модальное окно "У меня нет данных"
+window.showNoAuthDataModal = function(e) {
+  if (e) e.preventDefault();
+  const modal = document.getElementById('modalNoAuthData');
+  if (modal) modal.classList.remove('hidden');
+};
+
+window.hideNoAuthDataModal = function(e) {
+  if (e) e.preventDefault();
+  const modal = document.getElementById('modalNoAuthData');
+  if (modal) modal.classList.add('hidden');
+};
+
+// Инициализация 6-значных ячеек TOTP
+function setupDigitBoxes(rowId, hiddenInputId, onComplete) {
+  const row = document.getElementById(rowId);
+  const hiddenInput = document.getElementById(hiddenInputId);
+  if (!row) return;
+
+  const boxes = Array.from(row.querySelectorAll('.totp-digit-box'));
+  boxes.forEach((box, idx) => {
+    box.addEventListener('input', (e) => {
+      const val = box.value.replace(/\D/g, '');
+      box.value = val ? val[0] : '';
+      updateHidden();
+      if (box.value && idx < boxes.length - 1) {
+        boxes[idx + 1].focus();
+        boxes[idx + 1].select();
+      }
+      if (getCombinedValue().length === boxes.length) {
+        if (onComplete) onComplete();
+      }
+    });
+
+    box.addEventListener('keydown', (e) => {
+      if (e.key === 'Backspace' && !box.value && idx > 0) {
+        boxes[idx - 1].focus();
+        boxes[idx - 1].value = '';
+        updateHidden();
+      } else if (e.key === 'ArrowLeft' && idx > 0) {
+        boxes[idx - 1].focus();
+      } else if (e.key === 'ArrowRight' && idx < boxes.length - 1) {
+        boxes[idx + 1].focus();
+      }
+    });
+
+    box.addEventListener('paste', (e) => {
+      e.preventDefault();
+      const pasted = (e.clipboardData || window.clipboardData).getData('text');
+      const digits = pasted.replace(/\D/g, '').substring(0, boxes.length);
+      if (digits) {
+        digits.split('').forEach((d, i) => {
+          if (boxes[i]) boxes[i].value = d;
+        });
+        updateHidden();
+        const nextIdx = Math.min(digits.length, boxes.length - 1);
+        boxes[nextIdx].focus();
+        if (digits.length === boxes.length && onComplete) {
+          onComplete();
+        }
+      }
+    });
+  });
+
+  function getCombinedValue() {
+    return boxes.map(b => b.value).join('');
+  }
+
+  function updateHidden() {
+    if (hiddenInput) hiddenInput.value = getCombinedValue();
+  }
+}
+
 export function initAuth(onSuccess) {
   onAuthSuccessCallback = onSuccess;
   bindEvents();
+  setupDigitBoxes('totpDigitRow', 'loginTotpCode', () => {
+    handleStep2TOTP();
+  });
+  setupDigitBoxes('setupTotpDigitRow', 'setupTotpInput', () => {
+    handleSetup2FAConfirm();
+  });
 }
 
 export async function checkSession() {
@@ -105,6 +181,8 @@ export function showLoginStage(stepNum) {
   if (authBackdrop) authBackdrop.classList.remove('hidden');
   clearAuthError();
 
+  const prevHeight = authCard ? authCard.offsetHeight : 0;
+
   const steps = [authStep1, authStepTOTP, authStepSetup2FA];
   steps.forEach(st => {
     if (!st) return;
@@ -119,7 +197,19 @@ export function showLoginStage(stepNum) {
   if (targetStep) {
     targetStep.classList.remove('hidden-step');
     targetStep.classList.add('fade-in');
-    const firstInput = targetStep.querySelector('input');
+
+    if (authCard && prevHeight > 0) {
+      const newHeight = authCard.scrollHeight;
+      authCard.style.height = prevHeight + 'px';
+      void authCard.offsetHeight; // force reflow
+      authCard.style.transition = 'height 0.35s cubic-bezier(0.4, 0, 0.2, 1)';
+      authCard.style.height = newHeight + 'px';
+      setTimeout(() => {
+        if (authCard) authCard.style.height = 'auto';
+      }, 360);
+    }
+
+    const firstInput = targetStep.querySelector('input:not([type="hidden"])');
     if (firstInput) setTimeout(() => firstInput.focus(), 150);
   }
 }
@@ -132,6 +222,7 @@ export function handleBackToStep1(e) {
   clearAuthError();
   if (loginTotpCode) loginTotpCode.value = '';
   if (setupTotpInput) setupTotpInput.value = '';
+  document.querySelectorAll('.totp-digit-box').forEach(b => b.value = '');
   showLoginStage(1);
   return false;
 }
@@ -154,20 +245,23 @@ export async function handleStep1(e) {
 
   const btn = document.getElementById('btnStep1Next');
   if (btn) {
-    btn.textContent = 'Проверка...';
+    btn.innerHTML = `<span class="md3-circular-progress" style="width:20px; height:20px; vertical-align:middle; margin-right:8px;"><svg viewBox="0 0 50 50"><circle cx="25" cy="25" r="20" fill="none" stroke-width="4"></circle></svg></span><span>Проверка...</span>`;
     btn.disabled = true;
   }
 
   try {
     const res = await fetch(`${API_BASE}/api/auth/login`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Device-ID': getDeviceId()
+      },
       body: JSON.stringify({ username, password })
     });
 
     const data = await res.json();
     if (btn) {
-      btn.innerHTML = `<span>Далее</span><svg style="width:18px; height:18px; fill:currentColor;" viewBox="0 0 24 24"><path d="M12 4l-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8z"/></svg>`;
+      btn.innerHTML = `<span>Войти</span>`;
       btn.disabled = false;
     }
 
@@ -181,6 +275,9 @@ export async function handleStep1(e) {
     window._pendingUser = username;
     window._pendingPass = password;
     tempSessionToken = data.temp_session_token || data.token || '';
+
+    // Очищаем ячейки TOTP перед показом
+    document.querySelectorAll('.totp-digit-box').forEach(b => b.value = '');
 
     if (data.status === 'PENDING_2FA' || data.requires_2fa_setup) {
       if (totpQrImg && data.totp_qr_data_uri) totpQrImg.src = data.totp_qr_data_uri;
@@ -199,7 +296,7 @@ export async function handleStep1(e) {
   } catch (err) {
     console.error('Login error:', err);
     if (btn) {
-      btn.innerHTML = `<span>Далее</span><svg style="width:18px; height:18px; fill:currentColor;" viewBox="0 0 24 24"><path d="M12 4l-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8z"/></svg>`;
+      btn.innerHTML = `<span>Войти</span>`;
       btn.disabled = false;
     }
     showAuthError('Не удалось связаться с сервером (' + (err.message || err) + ')');
@@ -226,14 +323,17 @@ export async function handleStep2TOTP(e) {
 
   const btn = document.getElementById('btnStep2Login');
   if (btn) {
-    btn.textContent = 'Вход...';
+    btn.innerHTML = `<span class="md3-circular-progress" style="width:20px; height:20px; vertical-align:middle; margin-right:8px;"><svg viewBox="0 0 50 50"><circle cx="25" cy="25" r="20" fill="none" stroke-width="4"></circle></svg></span><span>Вход...</span>`;
     btn.disabled = true;
   }
 
   try {
     const res = await fetch(`${API_BASE}/api/auth/login`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Device-ID': getDeviceId()
+      },
       body: JSON.stringify({
         username: u,
         password: p,
@@ -243,7 +343,7 @@ export async function handleStep2TOTP(e) {
 
     const data = await res.json();
     if (btn) {
-      btn.textContent = 'Войти в сеть';
+      btn.innerHTML = `<span>Войти</span>`;
       btn.disabled = false;
     }
 
@@ -260,7 +360,7 @@ export async function handleStep2TOTP(e) {
 
     if (data.user) {
       const sUser = document.getElementById('sidebarUsername');
-      if (sUser) sUser.textContent = data.user.username;
+      if (sUser) sUser.textContent = data.user.display_name || data.user.username;
       const sRole = document.getElementById('userBadgeRole');
       if (sRole) sRole.textContent = data.user.is_admin ? 'ADMIN' : (`T${data.user.trust_level}`);
     }
@@ -270,7 +370,7 @@ export async function handleStep2TOTP(e) {
     }
   } catch (err) {
     if (btn) {
-      btn.textContent = 'Войти в сеть';
+      btn.innerHTML = `<span>Войти</span>`;
       btn.disabled = false;
     }
     showAuthError('Ошибка подключения к серверу: ' + (err.message || err));
@@ -297,12 +397,15 @@ export async function handleSetup2FAConfirm(e) {
 
   const btn = document.getElementById('btnConfirm2FASetup');
   if (btn) {
-    btn.textContent = 'Активация...';
+    btn.innerHTML = `<span class="md3-circular-progress" style="width:20px; height:20px; vertical-align:middle; margin-right:8px;"><svg viewBox="0 0 50 50"><circle cx="25" cy="25" r="20" fill="none" stroke-width="4"></circle></svg></span><span>Активация...</span>`;
     btn.disabled = true;
   }
 
   try {
-    const headers = { 'Content-Type': 'application/json' };
+    const headers = {
+      'Content-Type': 'application/json',
+      'X-Device-ID': getDeviceId()
+    };
     if (tempSessionToken) {
       headers['Authorization'] = `Bearer ${tempSessionToken}`;
     }
@@ -324,7 +427,10 @@ export async function handleSetup2FAConfirm(e) {
     if (!res.ok) {
       const loginRes = await fetch(`${API_BASE}/api/auth/login`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Device-ID': getDeviceId()
+        },
         body: JSON.stringify({
           username: u,
           password: p,
@@ -338,7 +444,7 @@ export async function handleSetup2FAConfirm(e) {
     }
 
     if (btn) {
-      btn.textContent = 'Подтвердить и активировать';
+      btn.innerHTML = `<span>Подтвердить и активировать</span>`;
       btn.disabled = false;
     }
 
@@ -354,7 +460,7 @@ export async function handleSetup2FAConfirm(e) {
 
     if (data.user) {
       const sUser = document.getElementById('sidebarUsername');
-      if (sUser) sUser.textContent = data.user.username;
+      if (sUser) sUser.textContent = data.user.display_name || data.user.username;
       const sRole = document.getElementById('userBadgeRole');
       if (sRole) sRole.textContent = data.user.is_admin ? 'ADMIN' : (`T${data.user.trust_level}`);
     }
@@ -364,7 +470,7 @@ export async function handleSetup2FAConfirm(e) {
     }
   } catch (err) {
     if (btn) {
-      btn.textContent = 'Подтвердить и активировать';
+      btn.innerHTML = `<span>Подтвердить и активировать</span>`;
       btn.disabled = false;
     }
     showAuthError('Ошибка подключения к серверу: ' + (err.message || err));

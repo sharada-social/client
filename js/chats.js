@@ -188,6 +188,41 @@ export function formatChatTime(dateStr) {
   return d.toLocaleDateString([], { day: 'numeric', month: 'short' });
 }
 
+export function isLastSeenAllowedForPartner(partnerId) {
+  try {
+    const raw = localStorage.getItem('sharada_privacy_last_seen');
+    if (!raw) return true; // по умолчанию: все видят
+    const conf = JSON.parse(raw);
+    const inExceptions = (conf.exceptions || []).includes(String(partnerId));
+    if (conf.mode === 'nobody') {
+      return inExceptions; // если 'nobody', видят только исключения
+    }
+    // mode === 'all'
+    return !inExceptions; // если 'all', видят все, кроме исключений
+  } catch (e) {
+    return true;
+  }
+}
+
+export function formatExactLastSeen(dateStr) {
+  if (!dateStr) return 'был(а) недавно';
+  const d = new Date(dateStr);
+  const now = new Date();
+  const timeStr = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const isToday = d.toDateString() === now.toDateString();
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const isYesterday = d.toDateString() === yesterday.toDateString();
+
+  if (isToday) {
+    return `был(а) сегодня в ${timeStr}`;
+  }
+  if (isYesterday) {
+    return `был(а) вчера в ${timeStr}`;
+  }
+  return `был(а) ${d.toLocaleDateString([], { day: 'numeric', month: 'short' })} в ${timeStr}`;
+}
+
 export function formatLastSeen(dateStr) {
   if (!dateStr) return 'не в сети';
   const d = new Date(dateStr);
@@ -278,15 +313,16 @@ export function renderChannelList(channels) {
     const isDirectOnline = isDirect && (onlineUsers.has(ch.name) || onlineUsers.has(ch.id));
 
     // Аватар
+    const displayName = ch.display_name || ch.name;
     let avatarBg = (ch.is_e2ee && ch.type !== 'saved') ? 'background:linear-gradient(135deg, #10b981, #059669);' : '';
-    let avatarContent = escapeHtml((ch.name || '#').charAt(0).toUpperCase());
+    let avatarContent = escapeHtml((displayName || '#').charAt(0).toUpperCase());
 
     if (ch.type === 'saved') {
       avatarBg = 'background:var(--grad-purple); font-size:22px;';
       avatarContent = '★';
     } else if (ch.type === 'system') {
-      avatarBg = 'background:var(--primary-red-accent);';
-      avatarContent = `<svg viewBox="0 0 24 24" style="width:24px; height:24px; fill:currentColor;"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11v8.8z"/></svg>`;
+      avatarBg = 'background:transparent; padding:0;';
+      avatarContent = `<img src="assets/icons/app-icon.png" style="width:100%; height:100%; object-fit:cover; border-radius:inherit;" alt="sharada">`;
     }
 
     // Время и статус прочтения последнего сообщения
@@ -314,7 +350,7 @@ export function renderChannelList(channels) {
       <div class="chat-info">
         <div class="chat-header-row">
           <span class="chat-name">
-            ${escapeHtml(ch.name)}
+            ${escapeHtml(displayName)}
             ${(ch.is_e2ee && ch.type !== 'saved') ? '<span class="badge badge-e2ee">E2EE</span>' : ''}
           </span>
           <div class="chat-meta-right">
@@ -353,21 +389,25 @@ function updateOnlineStatusUI() {
 let isOpeningChat = false;
 
 function setChatHeaderData(channel) {
-  // Гарантированно скрываем удаление и звонки для Избранного и системного чата sharada
+  // Плавная анимация скрытия/отображения удаления и звонков (класс hidden)
   const btnDeleteCurrentChat = document.getElementById('btnDeleteCurrentChat');
   if (btnDeleteCurrentChat) {
     if (channel.type !== 'system' && channel.type !== 'saved') {
-      btnDeleteCurrentChat.style.display = 'inline-flex';
+      btnDeleteCurrentChat.classList.remove('hidden');
       btnDeleteCurrentChat.onclick = () => confirmDeleteChannel(channel);
     } else {
-      btnDeleteCurrentChat.style.display = 'none';
+      btnDeleteCurrentChat.classList.add('hidden');
       btnDeleteCurrentChat.onclick = null;
     }
   }
 
   const btnStartCall = document.getElementById('btnStartCall');
   if (btnStartCall) {
-    btnStartCall.style.display = (channel.type === 'direct' || channel.type === 'group') ? 'inline-flex' : 'none';
+    if (channel.type === 'direct' || channel.type === 'group') {
+      btnStartCall.classList.remove('hidden');
+    } else {
+      btnStartCall.classList.add('hidden');
+    }
   }
 
   if (activeChatE2EE) {
@@ -396,8 +436,8 @@ function setChatHeaderData(channel) {
   if (channel.type === 'system') {
     if (activeChatTitle) activeChatTitle.textContent = 'sharada';
     if (activeChatAvatar) {
-      activeChatAvatar.innerHTML = `<svg viewBox="0 0 24 24" style="width:22px; height:22px; fill:currentColor;"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11v8.8z"/></svg>`;
-      activeChatAvatar.style.background = 'var(--primary-red-accent)';
+      activeChatAvatar.innerHTML = `<img src="assets/icons/app-icon.png" style="width:100%; height:100%; object-fit:cover; border-radius:inherit;" alt="sharada">`;
+      activeChatAvatar.style.background = 'transparent';
     }
     if (activeChatOnlineDot) activeChatOnlineDot.style.display = 'none';
     if (activeChatStatusText) activeChatStatusText.textContent = 'официальные системные уведомления';
@@ -412,9 +452,10 @@ function setChatHeaderData(channel) {
     return;
   }
 
-  if (activeChatTitle) activeChatTitle.textContent = channel.name;
+  const titleName = channel.display_name || channel.name;
+  if (activeChatTitle) activeChatTitle.textContent = titleName;
   if (activeChatAvatar) {
-    activeChatAvatar.textContent = channel.name.charAt(0).toUpperCase();
+    activeChatAvatar.textContent = titleName.charAt(0).toUpperCase();
     activeChatAvatar.style.background = (channel.is_e2ee && channel.type !== 'saved') ? 'linear-gradient(135deg, #10b981, #059669)' : 'var(--primary-red-accent)';
   }
 
@@ -436,7 +477,16 @@ function setChatHeaderData(channel) {
 
   if (activeChatStatusText) {
     if (isDirect) {
-      activeChatStatusText.textContent = partnerOnline ? 'в сети' : 'был(а) в сети недавно';
+      if (partnerOnline) {
+        activeChatStatusText.textContent = 'в сети';
+      } else {
+        const canSee = isLastSeenAllowedForPartner(channel.id) && isLastSeenAllowedForPartner(channel.name);
+        if (canSee && (channel.last_seen_at || channel.last_message?.created_at)) {
+          activeChatStatusText.textContent = formatExactLastSeen(channel.last_seen_at || channel.last_message.created_at);
+        } else {
+          activeChatStatusText.textContent = 'был(а) недавно';
+        }
+      }
     } else {
       activeChatStatusText.textContent = 'групповой канал';
     }
@@ -527,6 +577,9 @@ export const STATUS_ICONS = {
 
 export function getMessageStatusHtml(msg) {
   if (msg.status === 'pending') return STATUS_ICONS.pending;
+  if (!isLastSeenAllowedForPartner(currentChannelId)) {
+    return STATUS_ICONS.sent; // Реципрокная конфиденциальность
+  }
   if (msg.is_read || msg.status === 'read') return STATUS_ICONS.read;
   return STATUS_ICONS.sent;
 }
@@ -581,8 +634,13 @@ export async function loadMessages(channelId) {
     }
   } catch (e) {}
 
+  const spinnerWrap = document.getElementById('chatLoadingSpinnerMD3');
+  let spinnerTimer = null;
   if (!hasCache) {
     messagesContainer.innerHTML = '<div style="text-align:center; color:var(--text-sub); margin:auto 0;">Загрузка сообщений...</div>';
+    spinnerTimer = setTimeout(() => {
+      if (spinnerWrap) spinnerWrap.classList.add('visible');
+    }, 5000);
   }
 
   // 2. Запрашиваем актуальную историю сообщений с сервера (последние 50 сообщений)
@@ -605,6 +663,9 @@ export async function loadMessages(channelId) {
     }
   } catch (e) {
     console.warn('Network offline or server down, showing cached messages', e);
+  } finally {
+    if (spinnerTimer) clearTimeout(spinnerTimer);
+    if (spinnerWrap) spinnerWrap.classList.remove('visible');
   }
 }
 
@@ -688,10 +749,14 @@ export function scrollToOriginalMessage(msgId) {
   const target = document.getElementById(domId);
   if (target) {
     target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    target.style.animation = 'none';
     target.classList.remove('highlight-quote');
     void target.offsetWidth;
     target.classList.add('highlight-quote');
-    setTimeout(() => target.classList.remove('highlight-quote'), 1200);
+    setTimeout(() => {
+      target.classList.remove('highlight-quote');
+      target.style.animation = 'none';
+    }, 1200);
   }
 }
 
@@ -846,7 +911,7 @@ export function createMessageElement(msg, index = 0) {
       quoteHtml = `
         <div class="message-quote-box" data-quote-id="${escapeHtml(String(q.id || ''))}">
           <div class="quote-content">
-            <div class="quote-author">${escapeHtml(q.sender_name || 'Собеседник')}</div>
+            <div class="quote-author">${escapeHtml(q.sender_display_name || q.sender_name || 'Собеседник')}</div>
             <div class="quote-text">${escapeHtml(q.content)}</div>
           </div>
         </div>
@@ -866,8 +931,12 @@ export function createMessageElement(msg, index = 0) {
     }
   }
 
+  const currentChan = cachedChannels.find(c => c.id === (msg.channel_id || currentChannelId));
+  const isGroup = currentChan?.type === 'group';
+  const showAuthor = !isMine && isGroup;
+  const senderName = msg.sender_display_name || msg.sender_name || msg.sender || 'Собеседник';
   bubble.innerHTML = `
-    ${!isMine ? `<div class="message-author">${escapeHtml(msg.sender || msg.sender_name || 'Собеседник')}</div>` : ''}
+    ${showAuthor ? `<div class="message-author">${escapeHtml(senderName)}</div>` : ''}
     ${quoteHtml}
     <div class="message-text">${escapeHtml(msg.content)}</div>
     ${reactionsHtml}
@@ -876,6 +945,13 @@ export function createMessageElement(msg, index = 0) {
       ${isMine ? `<span class="msg-status-wrapper" id="msg-status-${cleanId}">${getMessageStatusHtml(msg)}</span>` : ''}
     </div>
   `;
+
+  // Предотвращение повторной анимации появления после снятия подсветки цитаты
+  bubble.addEventListener('animationend', (e) => {
+    if (e.animationName === 'messageSlideIn' || e.animationName === 'incomingSlideIn') {
+      bubble.style.animation = 'none';
+    }
+  });
 
   // Quote click -> scroll to original message
   const quoteEl = bubble.querySelector('.message-quote-box');
@@ -903,6 +979,13 @@ export function createMessageElement(msg, index = 0) {
   // Tap / click handler for opening reaction menu
   bubble.addEventListener('click', (e) => {
     if (e.target.closest('.message-quote-box') || e.target.closest('.message-reaction-chip')) return;
+    openMessageActionMenu(msg, bubble);
+  });
+
+  // ПКМ по сообщению также открывает реакции и кнопку ответа
+  bubble.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
     openMessageActionMenu(msg, bubble);
   });
 
@@ -971,6 +1054,7 @@ export function appendMessageToUI(msg, index = 0) {
   const bubble = createMessageElement(msg, index);
   messagesContainer.appendChild(bubble);
   scrollChatToBottom();
+  return bubble;
 }
 
 export function handleTypingEvent(data) {
@@ -1210,17 +1294,57 @@ export async function flushOutboxQueue() {
   }
 }
 
+function animateMessageFlyFromInput(bubble, sourceEl) {
+  if (!bubble || !sourceEl) return;
+  try {
+    const srcRect = sourceEl.getBoundingClientRect();
+    const destRect = bubble.getBoundingClientRect();
+
+    const deltaX = srcRect.left - destRect.left;
+    const deltaY = srcRect.top - destRect.top;
+
+    bubble.style.animation = 'none';
+    bubble.style.transformOrigin = 'bottom right';
+    bubble.style.transform = `translate(${deltaX}px, ${deltaY}px) scale(0.85)`;
+    bubble.style.opacity = '0.4';
+    bubble.style.transition = 'none';
+
+    // Force reflow
+    void bubble.offsetHeight;
+
+    requestAnimationFrame(() => {
+      bubble.style.transition = 'transform 0.42s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.35s ease-out';
+      bubble.style.transform = 'translate(0, 0) scale(1)';
+      bubble.style.opacity = '1';
+
+      const cleanup = () => {
+        bubble.style.transition = '';
+        bubble.style.transform = '';
+        bubble.style.transformOrigin = '';
+        bubble.removeEventListener('transitionend', cleanup);
+      };
+      bubble.addEventListener('transitionend', cleanup);
+    });
+  } catch (e) {
+    console.warn('Message fly animation failed:', e);
+  }
+}
+
 export async function sendMessage() {
   if (!messageInput) return;
   const text = messageInput.value.trim();
   if (!text || !currentChannelId) return;
 
-  // Очищаем поле ввода моментально, позволяя сразу писать следующее
+  const inputCapsule = messageInput.closest('.input-capsule') || messageInput;
+
+  // Очищаем поле ввода моментально и сбрасываем высоту капсулы
   messageInput.value = '';
+  messageInput.style.height = '22px';
+  messageInput.classList.remove('scrollable');
 
   const replyingTo = currentReplyingMessage ? {
     id: currentReplyingMessage.id,
-    sender_name: currentReplyingMessage.sender || currentReplyingMessage.sender_name || 'Собеседник',
+    sender_name: currentReplyingMessage.sender_display_name || currentReplyingMessage.sender || currentReplyingMessage.sender_name || 'Собеседник',
     content: currentReplyingMessage.content
   } : null;
   cancelReply();
@@ -1232,7 +1356,7 @@ export async function sendMessage() {
     id: tempId,
     channel_id: currentChannelId,
     sender_id: currentUser?.id || 'me',
-    sender_name: currentUser?.username || 'Я',
+    sender_name: currentUser?.display_name || currentUser?.username || 'Я',
     content: text,
     created_at: new Date().toISOString(),
     is_read: false,
@@ -1240,8 +1364,11 @@ export async function sendMessage() {
     reply_to: replyingTo
   };
 
-  // Мгновенное появление сообщения у себя в чате со значком часов
-  appendMessageToUI(optimisticMsg);
+  // Мгновенное появление сообщения у себя в чате с плавной анимацией полёта из строки ввода
+  const bubble = appendMessageToUI(optimisticMsg);
+  if (bubble && inputCapsule) {
+    animateMessageFlyFromInput(bubble, inputCapsule);
+  }
 
   // Сохраняем в кэш
   try {
@@ -1571,15 +1698,29 @@ let lastTypingTime = 0;
 export function initChatEvents() {
   if (btnSendMessage) btnSendMessage.addEventListener('click', sendMessage);
   if (messageInput) {
+    const adjustInputHeight = () => {
+      messageInput.style.height = '22px';
+      const scrollH = messageInput.scrollHeight;
+      const targetH = Math.min(Math.max(scrollH, 22), 220); // 10 строк максимум (22px * 10)
+      messageInput.style.height = `${targetH}px`;
+      if (scrollH > 220) {
+        messageInput.classList.add('scrollable');
+      } else {
+        messageInput.classList.remove('scrollable');
+      }
+    };
+
     messageInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
+      if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
         sendMessage();
+        adjustInputHeight();
       }
     });
 
-    // Отправка события печатания
+    // Отправка события печатания + автоперенос и плавная регулировка высоты
     messageInput.addEventListener('input', () => {
+      adjustInputHeight();
       const now = Date.now();
       if (now - lastTypingTime > 1800 && currentChannelId && wsConn && wsConn.readyState === WebSocket.OPEN) {
         lastTypingTime = now;
@@ -1589,8 +1730,8 @@ export function initChatEvents() {
             type: 'typing',
             channel_id: currentChannelId,
             sender_id: curUser?.id,
-            sender_name: curUser?.username,
-            payload: { action: 'text', username: curUser?.username, user_id: curUser?.id }
+            sender_name: curUser?.display_name || curUser?.username,
+            payload: { action: 'text', username: curUser?.display_name || curUser?.username, user_id: curUser?.id }
           }));
         } catch (e) {}
       }
@@ -1610,6 +1751,26 @@ export function initChatEvents() {
       if (e.target === messageActionBackdrop) {
         closeMessageActionMenu();
       }
+    });
+  }
+
+  // Кнопка "Копировать" в меню сообщения
+  const btnActionCopy = document.getElementById('btnActionCopy');
+  if (btnActionCopy) {
+    btnActionCopy.addEventListener('click', async () => {
+      if (activeActionMessage && activeActionMessage.content) {
+        try {
+          await navigator.clipboard.writeText(activeActionMessage.content);
+        } catch (e) {
+          const ta = document.createElement('textarea');
+          ta.value = activeActionMessage.content;
+          document.body.appendChild(ta);
+          ta.select();
+          document.execCommand('copy');
+          document.body.removeChild(ta);
+        }
+      }
+      closeMessageActionMenu();
     });
   }
 

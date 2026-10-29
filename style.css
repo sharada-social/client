@@ -17,7 +17,8 @@
   /* Градиенты настроек в стиле Telegram */
   --grad-purple: linear-gradient(135deg, #a771da, #7928ca);
   --grad-pink: linear-gradient(135deg, #ff0080, #7928ca);
-  --grad-blue: linear-gradient(135deg, #0070f3, #00dfd8);
+  --grad-blue: linear-gradient(135deg, #d4d4d8, #71717a); /* Серебряный градиент для кнопок в настройках */
+  --grad-silver: linear-gradient(135deg, #e4e4e7, #52525b);
   --grad-green: linear-gradient(135deg, #10b981, #059669);
   --grad-orange: linear-gradient(135deg, #f59e0b, #d97706);
   --grad-red: linear-gradient(135deg, #ef4444, #b91c1c);
@@ -1168,6 +1169,7 @@ html, body {
   background-color: var(--bg-card);
   color: #f0f0f0;
   border-bottom-left-radius: 6px;
+  animation: incomingSlideIn 0.32s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .message-bubble.outgoing {
@@ -3367,11 +3369,25 @@ button:focus, button:focus-visible, button:active {
   cursor: pointer;
   user-select: none;
   transition: transform 0.15s ease, opacity 0.2s ease;
-  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  border-top: none;
 }
 
 .settings-sidebar-footer:active {
   transform: scale(0.97);
+}
+
+.settings-brand-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+}
+
+.settings-sharada-logo-icon {
+  width: 15px;
+  height: 15px;
+  fill: var(--primary-red-accent);
+  flex-shrink: 0;
 }
 
 .settings-brand-text {
@@ -3785,5 +3801,604 @@ button:focus, button:focus-visible, button:active {
   color: #e2e8f0;
 }
 
+/* ==========================================================
+   ПЛАВАЮЩИЕ КАПСУЛЫ ЧАТА С ПЛАВНЫМ БЛЮРОМ
+   ========================================================== */
+.chat-window-header.chat-header-capsule {
+  position: absolute;
+  top: 14px;
+  left: 16px;
+  right: 16px;
+  z-index: 25;
+  height: 64px;
+  padding: 0 18px;
+  background: rgba(22, 22, 22, 0.82);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 32px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
 
+.chat-header-blur-shield {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 96px;
+  pointer-events: none;
+  z-index: 10;
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  -webkit-mask-image: linear-gradient(to top, transparent 0%, black 75%);
+  mask-image: linear-gradient(to top, transparent 0%, black 75%);
+}
 
+.chat-footer-blur-shield {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 120px;
+  pointer-events: none;
+  z-index: 10;
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 75%);
+  mask-image: linear-gradient(to bottom, transparent 0%, black 75%);
+}
+
+.message-input-area.message-input-floating {
+  position: absolute;
+  bottom: 14px;
+  left: 16px;
+  right: 16px;
+  z-index: 25;
+  background: transparent !important;
+  border-top: none !important;
+  padding: 0 !important;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.message-input-area.message-input-floating .input-capsule {
+  width: 100%;
+  background: rgba(28, 28, 28, 0.86);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 28px;
+  padding: 8px 12px 8px 16px;
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  box-shadow: 0 10px 36px rgba(0, 0, 0, 0.55);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.message-input-area.message-input-floating .input-capsule:focus-within {
+  border-color: rgba(255, 255, 255, 0.24);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.7);
+}
+
+.message-input-area.message-input-floating textarea#messageInput {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: #fff;
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 22px;
+  min-height: 22px;
+  height: 22px;
+  max-height: 220px;
+  resize: none;
+  overflow-y: hidden;
+  padding: 6px 0;
+  transition: height 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+  font-family: inherit;
+}
+
+.message-input-area.message-input-floating textarea#messageInput.scrollable {
+  overflow-y: auto;
+}
+
+/* Отступы сообщений, чтобы контент плавно уходил под капсулы */
+#messagesContainer {
+  padding-top: 92px !important;
+  padding-bottom: 96px !important;
+}
+
+/* Полоса ответа строго над строкой ввода */
+.reply-preview-bar {
+  width: 100%;
+  background: rgba(26, 26, 26, 0.92);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 20px;
+  padding: 8px 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  animation: replyBarFadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes replyBarFadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Кнопки звонка и удаления в шапке чата с плавной анимацией */
+.chat-action-btn {
+  transition: opacity 0.24s cubic-bezier(0.16, 1, 0.3, 1), transform 0.24s cubic-bezier(0.16, 1, 0.3, 1), width 0.24s ease, margin 0.24s ease;
+  opacity: 1;
+  transform: scale(1);
+  pointer-events: auto;
+}
+
+.chat-action-btn.hidden {
+  opacity: 0 !important;
+  transform: scale(0.7) !important;
+  pointer-events: none !important;
+  width: 0 !important;
+  min-width: 0 !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  overflow: hidden !important;
+}
+
+/* Material Design 3 Circular Loading Indicator */
+.md3-circular-progress {
+  display: inline-block;
+  animation: md3-rotate 1.4s linear infinite;
+}
+
+.md3-circular-progress svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.md3-circular-progress circle {
+  stroke: currentColor;
+  stroke-linecap: round;
+  animation: md3-dash 1.4s ease-in-out infinite;
+}
+
+@keyframes md3-rotate {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes md3-dash {
+  0% {
+    stroke-dasharray: 1, 200;
+    stroke-dashoffset: 0;
+  }
+  50% {
+    stroke-dasharray: 89, 200;
+    stroke-dashoffset: -35px;
+  }
+  100% {
+    stroke-dasharray: 89, 200;
+    stroke-dashoffset: -124px;
+  }
+}
+
+.chat-loading-spinner-wrap {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 15;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(18, 18, 18, 0.8);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  padding: 16px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55);
+}
+
+.chat-loading-spinner-wrap.visible {
+  opacity: 1;
+}
+
+/* ==========================================================
+   СТИЛИ ОКНА АВТОРИЗАЦИИ (НОВЫЙ ДИЗАЙН)
+   ========================================================== */
+.auth-header-centered {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  margin-bottom: 22px;
+}
+
+.auth-logo-star {
+  width: 54px;
+  height: 54px;
+  border-radius: 18px;
+  background: var(--gradient);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  box-shadow: 0 0 28px rgba(224, 22, 22, 0.45);
+  margin-bottom: 12px;
+}
+
+.sharada-star-logo-icon {
+  width: 28px;
+  height: 28px;
+  fill: currentColor;
+}
+
+.auth-title {
+  font-family: 'Unbounded', sans-serif;
+  font-size: 20px;
+  font-weight: 800;
+  color: #ffffff;
+  letter-spacing: -0.3px;
+}
+
+.auth-version-sub {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+.auth-btn-full {
+  width: 100%;
+}
+
+.auth-no-data-link-wrap {
+  text-align: center;
+  margin-top: 10px;
+}
+
+.auth-no-data-link {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-decoration: none;
+  transition: color 0.2s ease;
+}
+
+.auth-no-data-link:hover {
+  color: #ffffff;
+  text-decoration: underline;
+}
+
+/* 6 ячеек ввода TOTP */
+.totp-digit-row {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  margin: 16px 0;
+}
+
+.totp-digit-box {
+  width: 48px;
+  height: 56px;
+  background: #141414;
+  border: 1.5px solid rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
+  color: #ffffff;
+  font-size: 24px;
+  font-weight: 800;
+  text-align: center;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s, transform 0.15s;
+  font-family: 'Unbounded', monospace;
+}
+
+.totp-digit-box:focus {
+  border-color: var(--primary-red-accent);
+  box-shadow: 0 0 16px rgba(224, 22, 22, 0.4);
+  transform: scale(1.04);
+}
+
+/* Серебряные стили для кнопок в настройках */
+.btn-silver {
+  background: linear-gradient(135deg, #e4e4e7, #71717a);
+  color: #18181b;
+  font-weight: 800;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+}
+
+.btn-silver:hover {
+  filter: brightness(1.1);
+  transform: translateY(-1px);
+}
+
+.tg-icon-silver {
+  background: linear-gradient(135deg, #d4d4d8, #52525b) !important;
+  color: #ffffff !important;
+}
+
+/* ==========================================================
+   МОДАЛЬНОЕ ОКНО ОБНОВЛЕНИЯ И ПЛАВАЮЩИЙ ВИДЖЕТ ЗАГРУЗКИ
+   ========================================================== */
+.update-modal-card {
+  max-width: 440px;
+  width: 90%;
+  padding: 28px 24px;
+  background: #141414;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 24px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.7), 0 0 40px rgba(186, 17, 17, 0.15);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.update-modal-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.update-modal-icon {
+  width: 64px;
+  height: 64px;
+  border-radius: 18px;
+  box-shadow: 0 8px 24px rgba(186, 17, 17, 0.35);
+  margin-bottom: 4px;
+}
+
+.update-modal-brand {
+  font-family: 'Unbounded', sans-serif;
+  font-size: 24px;
+  font-weight: 800;
+  color: #ffffff;
+  letter-spacing: -0.5px;
+  text-transform: lowercase;
+}
+
+.update-modal-subtitle {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.5);
+  font-weight: 600;
+  font-family: monospace;
+}
+
+.update-modal-body {
+  width: 100%;
+  text-align: left;
+  margin-bottom: 20px;
+}
+
+.update-changelog-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #ff5252;
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.update-changelog-content {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 14px;
+  padding: 12px 14px;
+  max-height: 180px;
+  overflow-y: auto;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #d1d5db;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: inherit;
+  margin: 0;
+}
+
+.update-modal-footer {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.update-btn-download {
+  width: 100%;
+  padding: 12px 24px;
+  font-size: 15px;
+  font-weight: 700;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #ba1111, #e01616);
+  color: #ffffff;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 4px 18px rgba(186, 17, 17, 0.45);
+}
+
+.update-btn-download:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 24px rgba(224, 22, 22, 0.6);
+}
+
+.update-btn-skip {
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 6px 12px;
+  transition: color 0.2s ease;
+}
+
+.update-btn-skip:hover {
+  color: #ffffff;
+  text-decoration: underline;
+}
+
+/* Плавающий виджет загрузки в левом нижнем углу */
+.app-update-widget {
+  position: fixed;
+  bottom: 24px;
+  left: 24px;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: rgba(20, 20, 20, 0.92);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 50px;
+  padding: 6px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5), 0 0 20px rgba(186, 17, 17, 0.3);
+  transition: all 0.45s cubic-bezier(0.16, 1, 0.3, 1);
+  overflow: hidden;
+  user-select: none;
+}
+
+.update-widget-circle {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.update-widget-spinner-svg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 44px;
+  height: 44px;
+  transform: rotate(-90deg);
+}
+
+.update-widget-track {
+  stroke: rgba(255, 255, 255, 0.08);
+}
+
+.update-widget-progress {
+  stroke: #ff3333;
+  stroke-dasharray: 113.1;
+  stroke-dashoffset: 113.1;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.1s linear;
+}
+
+.update-widget-inner-dot {
+  width: 30px;
+  height: 30px;
+  background: #ba1111;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 12px rgba(186, 17, 17, 0.8);
+}
+
+.update-widget-dot-icon {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+}
+
+.update-widget-text {
+  font-size: 13px;
+  font-weight: 700;
+  color: #ffffff;
+  white-space: nowrap;
+  max-width: 0;
+  opacity: 0;
+  overflow: hidden;
+  transition: max-width 0.45s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.3s ease, padding 0.3s ease;
+  padding: 0;
+}
+
+/* Стадия 1: Вращающееся кольцо соединения */
+.app-update-widget.stage-connecting .update-widget-spinner-svg {
+  animation: widgetSpinRing 1s linear infinite;
+}
+.app-update-widget.stage-connecting .update-widget-progress {
+  stroke-dasharray: 40, 73.1;
+  stroke-dashoffset: 0;
+}
+
+@keyframes widgetSpinRing {
+  100% {
+    transform: rotate(270deg);
+  }
+}
+
+/* Стадия 2: Скачивание (прогрессбар) */
+.app-update-widget.stage-downloading .update-widget-spinner-svg {
+  animation: none;
+  transform: rotate(-90deg);
+}
+
+/* Стадия 3: Готово -> Плавная трансформация в парящую капсулу */
+.app-update-widget.stage-ready {
+  cursor: pointer;
+  background: linear-gradient(135deg, rgba(186, 17, 17, 0.95), rgba(130, 10, 10, 0.95));
+  border-color: rgba(255, 80, 80, 0.4);
+  padding: 6px 18px 6px 8px;
+  box-shadow: 0 8px 30px rgba(186, 17, 17, 0.6), 0 0 15px rgba(255, 60, 60, 0.4);
+  animation: readyPulse 2s infinite ease-in-out;
+}
+
+.app-update-widget.stage-ready:hover {
+  transform: translateY(-2px) scale(1.02);
+  filter: brightness(1.1);
+}
+
+.app-update-widget.stage-ready .update-widget-progress {
+  stroke: #ffffff;
+  stroke-dashoffset: 0;
+}
+
+.app-update-widget.stage-ready .update-widget-text {
+  max-width: 220px;
+  opacity: 1;
+  padding-right: 6px;
+}
+
+@keyframes readyPulse {
+  0%, 100% {
+    box-shadow: 0 8px 30px rgba(186, 17, 17, 0.5);
+  }
+  50% {
+    box-shadow: 0 8px 36px rgba(230, 20, 20, 0.8), 0 0 20px rgba(255, 80, 80, 0.6);
+  }
+}
+
+/* Плавное появление сообщений собеседника */
+@keyframes incomingSlideIn {
+  0% {
+    opacity: 0;
+    transform: translateY(14px) scale(0.96);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
