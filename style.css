@@ -4377,6 +4377,23 @@ button:focus, button:focus-visible, button:active {
 /* ==========================================================
    МОДАЛЬНОЕ ОКНО ОБНОВЛЕНИЯ И ПЛАВАЮЩИЙ ВИДЖЕТ ЗАГРУЗКИ
    ========================================================== */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  transition: opacity 0.25s ease;
+}
+
+.modal-backdrop.hidden {
+  display: none !important;
+}
+
 .update-modal-card {
   max-width: 440px;
   width: 90%;
