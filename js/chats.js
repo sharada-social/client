@@ -4,6 +4,14 @@
 import { API_BASE, WS_BASE, getAuthToken, getCurrentUser, authFetch, escapeHtml } from './api.js';
 import { showAppDialog } from './modals.js';
 import { setConnectionState } from './connection.js';
+import { startVoiceCall, handleIncomingCallWsEvent, setCallWsSender, initVoiceCallEvents } from './calls.js';
+import {
+  renderAvatarHTML,
+  applyAvatarToElement,
+  renderUserDisplayNameHTML,
+  getUserDisplayNameText,
+  getAvatarDataUri
+} from './identity.js';
 
 const chatList = document.getElementById('chatList');
 const emptyChatState = document.getElementById('emptyChatState');
@@ -44,7 +52,7 @@ const btnCancelNewGroup = document.getElementById('btnCancelNewGroup');
 const btnSubmitNewGroup = document.getElementById('btnSubmitNewGroup');
 
 export let cachedChannels = [];
-let currentChannelId = null;
+export let currentChannelId = null;
 let wsConn = null;
 const onlineUsers = new Set();
 const typingUsers = new Map(); // channelId -> Map(userId -> { username, action, timer })
@@ -195,6 +203,44 @@ export function formatChatTime(dateStr) {
   return d.toLocaleDateString([], { day: 'numeric', month: 'short' });
 }
 
+export function getChatDateKey(dateStr) {
+  if (!dateStr) return '';
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return '';
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+export function formatChatDateSeparator(dateStr) {
+  if (!dateStr) return '';
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return '';
+  const now = new Date();
+
+  const isToday = d.toDateString() === now.toDateString();
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const isYesterday = d.toDateString() === yesterday.toDateString();
+
+  if (isToday) return 'Сегодня';
+  if (isYesterday) return 'Вчера';
+
+  return d.toLocaleDateString('ru-RU', {
+    day: 'numeric',
+    month: 'long',
+    year: d.getFullYear() !== now.getFullYear() ? 'numeric' : undefined
+  });
+}
+
+export function createDateSeparatorElement(dateStr) {
+  const dateKey = getChatDateKey(dateStr);
+  const sep = document.createElement('div');
+  sep.className = 'chat-date-separator';
+  sep.dataset.dateKey = dateKey;
+  sep.innerHTML = `<span class="chat-date-badge">${escapeHtml(formatChatDateSeparator(dateStr))}</span>`;
+  return sep;
+}
+
+
 export function isLastSeenAllowedForPartner(partnerId) {
   try {
     const raw = localStorage.getItem('sharada_privacy_last_seen');
@@ -284,6 +330,24 @@ export async function loadChannels() {
   }
 }
 
+function formatLastMessageSnippet(lastMsg) {
+  if (!lastMsg || !lastMsg.content) return '';
+  const content = String(lastMsg.content);
+  if (content.startsWith('[CALL:')) {
+    const parts = content.slice(1, -1).split(':');
+    const callType = parts[1];
+    if (callType === 'missed') {
+      return '📞 Пропущенный вызов';
+    }
+    const secs = parseInt(parts[2] || '0', 10);
+    const m = Math.floor(secs / 60);
+    const s = secs % 60;
+    const durStr = m > 0 ? `${m} мин ${s} сек` : `${s} сек`;
+    return `📞 Аудиозвонок (${durStr})`;
+  }
+  return escapeHtml(content);
+}
+
 export function renderChannelList(channels) {
   if (!chatList) return;
   chatList.innerHTML = '';
@@ -317,20 +381,13 @@ export function renderChannelList(channels) {
 
     // Онлайн статус: ТОЛЬКО в direct (приватных) диалогах, никогда в группах, общем, Избранном и sharada
     const isDirect = ch.type === 'direct';
-    const isDirectOnline = isDirect && (onlineUsers.has(ch.name) || onlineUsers.has(ch.id));
+    const isPurged = isDirect && (ch.display_name === 'Удаленный аккаунт' || ch.name === 'Удаленный аккаунт' || (typeof ch.recipient_id === 'string' && ch.recipient_id === '' && ch.recipient_status === ''));
+    const isArchived = isDirect && (ch.recipient_is_archived === true || ch.recipient_status === 'ARCHIVED');
+    const isDirectOnline = isDirect && !isPurged && !isArchived && (onlineUsers.has(ch.name) || onlineUsers.has(ch.id));
 
-    // Аватар
-    const displayName = ch.display_name || ch.name;
-    let avatarBg = (ch.is_e2ee && ch.type !== 'saved') ? 'background:linear-gradient(135deg, #10b981, #059669);' : '';
-    let avatarContent = escapeHtml((displayName || '#').charAt(0).toUpperCase());
-
-    if (ch.type === 'saved') {
-      avatarBg = 'background:var(--grad-purple); font-size:22px;';
-      avatarContent = '★';
-    } else if (ch.type === 'system') {
-      avatarBg = 'background:var(--primary-red-accent); display:flex; align-items:center; justify-content:center;';
-      avatarContent = `<img src="assets/icons/app-icon.png" style="width:62%; height:62%; object-fit:contain;" alt="sharada">`;
-    }
+    // Единый аватар и имя через identity.js
+    const avatarHtml = renderAvatarHTML(ch, { showOnlineDot: isDirect, isOnline: isDirectOnline });
+    const displayNameHtml = renderUserDisplayNameHTML(ch);
 
     // Время и статус прочтения последнего сообщения
     const lastMsg = ch.last_message;
@@ -340,24 +397,22 @@ export function renderChannelList(channels) {
     // Микротекст последнего сообщения (твоё сообщение подсвечивается акцентным цветом "Вы:")
     let lastMsgHtml = '';
     if (lastMsg) {
+      const snippet = formatLastMessageSnippet(lastMsg);
       if (isMyLastMsg) {
-        lastMsgHtml = `<span class="chat-my-msg-tag">Вы:</span> <span class="chat-last-text">${escapeHtml(lastMsg.content)}</span>`;
+        lastMsgHtml = `<span class="chat-my-msg-tag">Вы:</span> <span class="chat-last-text">${snippet}</span>`;
       } else {
-        lastMsgHtml = `<span class="chat-last-text">${escapeHtml(lastMsg.content)}</span>`;
+        lastMsgHtml = `<span class="chat-last-text">${snippet}</span>`;
       }
     } else {
       lastMsgHtml = `<span class="chat-last-text text-muted">${escapeHtml(ch.description || 'Нет сообщений')}</span>`;
     }
 
     item.innerHTML = `
-      <div class="avatar" style="${avatarBg}">
-        ${avatarContent}
-        ${isDirect ? `<span class="avatar-online-dot ${isDirectOnline ? 'visible' : ''}"></span>` : ''}
-      </div>
+      ${avatarHtml}
       <div class="chat-info">
         <div class="chat-header-row">
           <span class="chat-name">
-            ${escapeHtml(displayName)}
+            ${displayNameHtml}
             ${(ch.is_e2ee && ch.type !== 'saved') ? '<span class="badge badge-e2ee">E2EE</span>' : ''}
           </span>
           <div class="chat-meta-right">
@@ -383,6 +438,10 @@ export function renderChannelList(channels) {
 
     chatList.appendChild(item);
   });
+
+  if (window.twemoji && chatList) {
+    try { window.twemoji.parse(chatList, { folder: 'svg', ext: '.svg' }); } catch(e){}
+  }
 }
 
 function updateOnlineStatusUI() {
@@ -395,25 +454,87 @@ function updateOnlineStatusUI() {
 
 let isOpeningChat = false;
 
+function setInputCapsuleState(mode, placeholder) {
+  const morphCapsule = document.getElementById('chatMorphCapsule');
+  const inputSubContent = document.getElementById('chatInputContent');
+  const btnAttach = document.getElementById('btnAttachFile');
+  const btnSend = document.getElementById('btnSendMessage');
+  if (!messageInput) return;
+
+  if (messageInput.placeholder === placeholder && ((mode === 'system' && messageInput.disabled) || (mode === 'normal' && !messageInput.disabled))) {
+    return;
+  }
+
+  messageInput.style.transition = 'opacity 0.14s ease';
+  messageInput.style.opacity = '0';
+
+  setTimeout(() => {
+    if (mode === 'system') {
+      morphCapsule?.classList.add('system-mode');
+      inputSubContent?.classList.add('system-mode');
+      btnAttach?.classList.add('btn-hidden');
+      btnSend?.classList.add('btn-hidden');
+      messageInput.value = '';
+      messageInput.placeholder = placeholder;
+      messageInput.disabled = true;
+      messageInput.style.height = '24px';
+    } else {
+      morphCapsule?.classList.remove('system-mode');
+      inputSubContent?.classList.remove('system-mode');
+      btnAttach?.classList.remove('btn-hidden');
+      btnSend?.classList.remove('btn-hidden');
+      messageInput.placeholder = placeholder;
+      messageInput.disabled = false;
+      resetInputHeight();
+    }
+    messageInput.style.opacity = '1';
+  }, 120);
+}
+
 function setChatHeaderData(channel) {
-  // Плавная анимация скрытия/отображения удаления и звонков (класс hidden)
+  const isDirect = channel.type === 'direct';
+  const isPurged = isDirect && (channel.display_name === 'Удаленный аккаунт' || channel.name === 'Удаленный аккаунт' || (typeof channel.recipient_id === 'string' && channel.recipient_id === '' && channel.recipient_status === ''));
+  const isArchived = isDirect && (channel.recipient_is_archived === true || channel.recipient_status === 'ARCHIVED');
+
+  // Закрываем меню чата и панель выбора обоев при смене чата
+  closeChatHeaderMenu();
+  closeWallpaperPicker(true);
+
+  // Применяем сохраненные обои для текущего чата
+  applyCurrentChatWallpaper(channel.id);
+
+  // Плавная анимация скрытия/отображения удаления в контекстном меню
   const btnDeleteCurrentChat = document.getElementById('btnDeleteCurrentChat');
   if (btnDeleteCurrentChat) {
     if (channel.type !== 'system' && channel.type !== 'saved') {
-      btnDeleteCurrentChat.classList.remove('hidden');
-      btnDeleteCurrentChat.onclick = () => confirmDeleteChannel(channel);
+      btnDeleteCurrentChat.style.display = 'flex';
+      btnDeleteCurrentChat.onclick = () => {
+        closeChatHeaderMenu();
+        confirmDeleteChannel(channel);
+      };
     } else {
-      btnDeleteCurrentChat.classList.add('hidden');
+      btnDeleteCurrentChat.style.display = 'none';
       btnDeleteCurrentChat.onclick = null;
     }
   }
 
+  // Кнопка аудиозвонка: строго только в личных диалогах с не удаленными и не архивными пользователями (в группах отключено)
   const btnStartCall = document.getElementById('btnStartCall');
   if (btnStartCall) {
-    if (channel.type === 'direct' || channel.type === 'group') {
+    if (isDirect && !isPurged && !isArchived) {
       btnStartCall.classList.remove('hidden');
     } else {
       btnStartCall.classList.add('hidden');
+    }
+  }
+
+  // Плашка предупреждения об архивации аккаунта собеседника
+  const archivedNotice = document.getElementById('archivedUserNoticeBanner');
+  if (archivedNotice) {
+    if (isArchived) {
+      archivedNotice.classList.remove('hidden');
+    } else {
+      archivedNotice.classList.add('hidden');
     }
   }
 
@@ -421,77 +542,44 @@ function setChatHeaderData(channel) {
     activeChatE2EE.style.display = (channel.is_e2ee && channel.type !== 'saved' && channel.type !== 'system') ? 'inline-flex' : 'none';
   }
 
-  const inputCapsule = messageInput?.closest('.input-capsule');
+  // Единое применение аватара и имени для шапки чата
+  if (activeChatAvatar) {
+    applyAvatarToElement(activeChatAvatar, channel);
+  }
+  if (activeChatTitle) {
+    activeChatTitle.innerHTML = renderUserDisplayNameHTML(channel);
+  }
 
   if (channel.type === 'saved') {
-    if (activeChatTitle) activeChatTitle.textContent = 'Избранное';
-    if (activeChatAvatar) {
-      activeChatAvatar.textContent = '★';
-      activeChatAvatar.style.background = 'var(--grad-purple)';
-    }
     if (activeChatOnlineDot) activeChatOnlineDot.style.display = 'none';
     if (activeChatStatusText) activeChatStatusText.textContent = 'ваше личное хранилище';
-    if (btnAttachFile) btnAttachFile.style.display = 'inline-flex';
-    if (btnSendMessage) {
-      btnSendMessage.style.display = 'flex';
-      btnSendMessage.disabled = false;
-      btnSendMessage.style.opacity = '1';
-    }
-    if (inputCapsule) inputCapsule.classList.remove('system-mode');
-    if (messageInput) {
-      messageInput.placeholder = 'Написать в Избранное...';
-      messageInput.disabled = false;
-      resetInputHeight();
-    }
+    setInputCapsuleState('normal', 'Написать в Избранное...');
     return;
   }
 
   if (channel.type === 'system') {
-    if (activeChatTitle) activeChatTitle.textContent = 'sharada';
-    if (activeChatAvatar) {
-      activeChatAvatar.style.background = 'var(--primary-red-accent)';
-      activeChatAvatar.style.display = 'flex';
-      activeChatAvatar.style.alignItems = 'center';
-      activeChatAvatar.style.justifyContent = 'center';
-      activeChatAvatar.innerHTML = `<img src="assets/icons/app-icon.png" style="width:62%; height:62%; object-fit:contain;" alt="sharada">`;
-    }
     if (activeChatOnlineDot) activeChatOnlineDot.style.display = 'none';
     if (activeChatStatusText) activeChatStatusText.textContent = 'официальные системные уведомления';
-    
-    // В системном чате полностью скрываем кнопки прикрепления и отправки
-    if (btnAttachFile) btnAttachFile.style.display = 'none';
-    if (btnSendMessage) btnSendMessage.style.display = 'none';
-    if (inputCapsule) inputCapsule.classList.add('system-mode');
-    if (messageInput) {
-      messageInput.value = '';
-      messageInput.placeholder = 'Служебный канал только для чтения';
-      messageInput.disabled = true;
-      messageInput.style.height = '24px';
-    }
+    setInputCapsuleState('system', 'Служебный канал только для чтения');
     return;
   }
 
-  const titleName = channel.display_name || channel.name;
-  if (activeChatTitle) activeChatTitle.textContent = titleName;
-  if (activeChatAvatar) {
-    activeChatAvatar.textContent = titleName.charAt(0).toUpperCase();
-    activeChatAvatar.style.background = (channel.is_e2ee && channel.type !== 'saved') ? 'linear-gradient(135deg, #10b981, #059669)' : 'var(--primary-red-accent)';
+  if (isPurged) {
+    if (activeChatOnlineDot) activeChatOnlineDot.style.display = 'none';
+    if (activeChatStatusText) activeChatStatusText.textContent = 'аккаунт удален';
+    setInputCapsuleState('system', 'Учетная запись удалена');
+    return;
   }
 
-  if (btnAttachFile) btnAttachFile.style.display = 'inline-flex';
-  if (btnSendMessage) {
-    btnSendMessage.style.display = 'flex';
-    btnSendMessage.disabled = false;
-    btnSendMessage.style.opacity = '1';
-  }
-  if (inputCapsule) inputCapsule.classList.remove('system-mode');
-  if (messageInput) {
-    messageInput.placeholder = 'Написать сообщение...';
-    messageInput.disabled = false;
-    resetInputHeight();
+  if (isArchived) {
+    if (activeChatOnlineDot) activeChatOnlineDot.style.display = 'none';
+    if (activeChatStatusText) activeChatStatusText.textContent = 'пользователь в архиве';
+    setInputCapsuleState('system', 'Пользователь находится в архиве');
+    return;
   }
 
-  const isDirect = channel.type === 'direct';
+  setInputCapsuleState('normal', 'Написать сообщение...');
+
   const partnerOnline = isDirect && (onlineUsers.has(channel.name) || onlineUsers.has(channel.id));
 
   if (activeChatOnlineDot) {
@@ -504,8 +592,8 @@ function setChatHeaderData(channel) {
         activeChatStatusText.textContent = 'в сети';
       } else {
         const canSee = isLastSeenAllowedForPartner(channel.id) && isLastSeenAllowedForPartner(channel.name);
-        if (canSee && (channel.last_seen_at || channel.last_message?.created_at)) {
-          activeChatStatusText.textContent = formatExactLastSeen(channel.last_seen_at || channel.last_message.created_at);
+        if (canSee && channel.last_seen_at) {
+          activeChatStatusText.textContent = formatExactLastSeen(channel.last_seen_at);
         } else {
           activeChatStatusText.textContent = 'был(а) недавно';
         }
@@ -625,14 +713,47 @@ export function scrollChatToBottom(smooth = false) {
 }
 
 let currentOldestMessageId = null;
+let currentNewestMessageId = null;
 let hasMoreMessages = true;
+let hasMoreNewer = false;
 let isLoadingMore = false;
+let isLoadingNewer = false;
+let isJumpingToQuote = false;
+
+export function scrollMessageToCenter(targetEl, smooth = false) {
+  if (!targetEl || !messagesContainer) return;
+  const targetOffsetTop = targetEl.offsetTop;
+  const targetHeight = targetEl.offsetHeight;
+  const containerHeight = messagesContainer.clientHeight;
+  const desiredScrollTop = Math.max(0, targetOffsetTop - (containerHeight / 2) + (targetHeight / 2));
+  messagesContainer.scrollTo({
+    top: desiredScrollTop,
+    behavior: smooth ? 'smooth' : 'auto'
+  });
+}
+
+export function updateScrollToBottomVisibility() {
+  const btn = document.getElementById('btnScrollToBottom');
+  if (!btn || !messagesContainer) return;
+
+  const distFromBottom = messagesContainer.scrollHeight - messagesContainer.scrollTop - messagesContainer.clientHeight;
+  // Показываем кнопку если прокрутили вверх (> 160px) или если просматриваем историю с непрогруженным низом (hasMoreNewer)
+  if (distFromBottom > 160 || hasMoreNewer) {
+    btn.classList.remove('hidden');
+  } else {
+    btn.classList.add('hidden');
+  }
+}
 
 export async function loadMessages(channelId) {
   if (!messagesContainer) return;
   currentOldestMessageId = null;
+  currentNewestMessageId = null;
   hasMoreMessages = true;
+  hasMoreNewer = false;
   isLoadingMore = false;
+  isLoadingNewer = false;
+  updateScrollToBottomVisibility();
 
   // 1. Сначала мгновенно рендерим сохраненные сообщения из локального кэша
   let hasCache = false;
@@ -649,8 +770,9 @@ export async function loadMessages(channelId) {
           return true;
         });
         messagesContainer.innerHTML = '';
-        currentOldestMessageId = msgs[0]?.id;
-        msgs.forEach((m, idx) => appendMessageToUI(m, idx));
+        currentOldestMessageId = msgs[0]?.id ? String(msgs[0].id).replace(/^(msg-)+/, '') : null;
+        currentNewestMessageId = msgs[msgs.length - 1]?.id ? String(msgs[msgs.length - 1].id).replace(/^(msg-)+/, '') : null;
+        msgs.forEach((m, idx) => appendMessageToUI(m, idx, false));
         scrollChatToBottom();
         hasCache = true;
       }
@@ -673,13 +795,16 @@ export async function loadMessages(channelId) {
       const msgs = await res.json();
       messagesContainer.innerHTML = '';
       if (msgs && msgs.length > 0) {
-        currentOldestMessageId = msgs[0]?.id;
+        currentOldestMessageId = msgs[0]?.id ? String(msgs[0].id).replace(/^(msg-)+/, '') : null;
+        currentNewestMessageId = msgs[msgs.length - 1]?.id ? String(msgs[msgs.length - 1].id).replace(/^(msg-)+/, '') : null;
         hasMoreMessages = msgs.length >= 50;
+        hasMoreNewer = false;
         localStorage.setItem(`sharada_cached_messages_${channelId}`, JSON.stringify(msgs));
-        msgs.forEach((m, idx) => appendMessageToUI(m, idx));
+        msgs.forEach((m, idx) => appendMessageToUI(m, idx, false));
         scrollChatToBottom();
       } else {
         hasMoreMessages = false;
+        hasMoreNewer = false;
         messagesContainer.innerHTML = '<div style="text-align:center; color:var(--text-sub); margin:auto 0;">История сообщений пуста. Начните диалог!</div>';
       }
       flushOutboxQueue();
@@ -689,6 +814,7 @@ export async function loadMessages(channelId) {
   } finally {
     if (spinnerTimer) clearTimeout(spinnerTimer);
     if (spinnerWrap) spinnerWrap.classList.remove('visible');
+    updateScrollToBottomVisibility();
   }
 }
 
@@ -700,22 +826,35 @@ export async function loadOlderMessages(channelId) {
   const prevScrollTop = messagesContainer.scrollTop;
 
   try {
-    const res = await authFetch(`/api/channels/${channelId}/messages?before=${currentOldestMessageId}&limit=50`);
+    const cleanId = String(currentOldestMessageId).replace(/^(msg-)+/, '');
+    const res = await authFetch(`/api/channels/${channelId}/messages?before=${cleanId}&limit=50`);
     if (res.ok) {
       const olderMsgs = await res.json();
       if (!olderMsgs || olderMsgs.length === 0) {
         hasMoreMessages = false;
       } else {
-        currentOldestMessageId = olderMsgs[0]?.id;
+        const firstMsg = olderMsgs[0];
+        currentOldestMessageId = firstMsg?.id ? String(firstMsg.id).replace(/^(msg-)+/, '') : null;
         if (olderMsgs.length < 50) {
           hasMoreMessages = false;
         }
 
-        const firstChild = messagesContainer.firstChild;
+        const fragment = document.createDocumentFragment();
+        let prevDateKey = null;
         olderMsgs.forEach((m) => {
+          const mDateKey = getChatDateKey(m.created_at || new Date().toISOString());
+          if (mDateKey && mDateKey !== prevDateKey) {
+            fragment.appendChild(createDateSeparatorElement(m.created_at || new Date().toISOString()));
+            prevDateKey = mDateKey;
+          }
           const el = createMessageElement(m);
-          messagesContainer.insertBefore(el, firstChild);
+          if (window.twemoji) {
+            try { window.twemoji.parse(el, { folder: 'svg', ext: '.svg' }); } catch(e){}
+          }
+          fragment.appendChild(el);
         });
+
+        messagesContainer.insertBefore(fragment, messagesContainer.firstChild);
 
         // Сохраняем позицию скролла чтобы экран не прыгал
         messagesContainer.scrollTop = messagesContainer.scrollHeight - prevScrollHeight + prevScrollTop;
@@ -725,6 +864,38 @@ export async function loadOlderMessages(channelId) {
     console.warn('Error loading older messages', e);
   } finally {
     isLoadingMore = false;
+    updateScrollToBottomVisibility();
+  }
+}
+
+export async function loadNewerMessages(channelId) {
+  if (isLoadingNewer || !hasMoreNewer || !currentNewestMessageId || !messagesContainer) return;
+  isLoadingNewer = true;
+
+  try {
+    const cleanId = String(currentNewestMessageId).replace(/^(msg-)+/, '');
+    const res = await authFetch(`/api/channels/${channelId}/messages?after=${cleanId}&limit=50`);
+    if (res.ok) {
+      const newerMsgs = await res.json();
+      if (!newerMsgs || newerMsgs.length === 0) {
+        hasMoreNewer = false;
+      } else {
+        const lastMsg = newerMsgs[newerMsgs.length - 1];
+        currentNewestMessageId = lastMsg?.id ? String(lastMsg.id).replace(/^(msg-)+/, '') : null;
+        if (newerMsgs.length < 50) {
+          hasMoreNewer = false;
+        }
+
+        newerMsgs.forEach((m, idx) => {
+          appendMessageToUI(m, idx, false);
+        });
+      }
+    }
+  } catch (e) {
+    console.warn('Error loading newer messages', e);
+  } finally {
+    isLoadingNewer = false;
+    updateScrollToBottomVisibility();
   }
 }
 
@@ -766,31 +937,88 @@ export function getMsgDomId(id) {
   return `msg-${clean}`;
 }
 
-export function scrollToOriginalMessage(msgId) {
+export async function scrollToOriginalMessage(msgId) {
   if (!msgId) return;
-  const domId = getMsgDomId(msgId);
-  const target = document.getElementById(domId);
+  const cleanId = String(msgId).replace(/^(msg-)+/, '');
+  const domId = getMsgDomId(cleanId);
+  let target = document.getElementById(domId) || document.getElementById(cleanId) || document.getElementById(`msg-${cleanId}`);
   const container = document.getElementById('messagesContainer');
-  if (target && container) {
-    const containerRect = container.getBoundingClientRect();
-    const targetRect = target.getBoundingClientRect();
-    const relativeTop = (targetRect.top - containerRect.top) + container.scrollTop;
-    const targetScrollTop = relativeTop - (container.clientHeight / 2) + (target.clientHeight / 2);
+  if (!container) return;
 
-    container.scrollTo({
-      top: Math.max(0, targetScrollTop),
-      behavior: 'smooth'
-    });
-
-    target.style.animation = 'none';
+  if (target) {
+    // Сообщение уже отрисовано в DOM: плавно центрируем его
+    scrollMessageToCenter(target, true);
     target.classList.remove('highlight-quote');
     void target.offsetWidth;
     target.classList.add('highlight-quote');
     setTimeout(() => {
       target.classList.remove('highlight-quote');
-      target.style.animation = 'none';
-    }, 1200);
+    }, 1600);
+    updateScrollToBottomVisibility();
+    return;
   }
+
+  if (currentChannelId) {
+    isJumpingToQuote = true;
+    try {
+      const res = await authFetch(`/api/channels/${currentChannelId}/messages?around=${cleanId}`);
+      if (res.ok) {
+        const msgs = await res.json();
+        if (msgs && msgs.length > 0) {
+          container.innerHTML = '';
+          const firstMsg = msgs[0];
+          const lastMsg = msgs[msgs.length - 1];
+          currentOldestMessageId = firstMsg?.id ? String(firstMsg.id).replace(/^(msg-)+/, '') : null;
+          currentNewestMessageId = lastMsg?.id ? String(lastMsg.id).replace(/^(msg-)+/, '') : null;
+          hasMoreMessages = true;
+          hasMoreNewer = true; // Разрешаем подгрузку более новых сообщений вниз
+
+          // Рендерим загруженный срез без вызова автопрокрутки в самый низ
+          msgs.forEach((m) => appendMessageToUI(m, 0, false));
+
+          target = document.getElementById(domId) || document.getElementById(cleanId) || document.getElementById(`msg-${cleanId}`) || container.querySelector(`[id*="${cleanId}"]`);
+
+          if (target) {
+            // Мгновенно центрируем сообщение в видимой области контейнера
+            scrollMessageToCenter(target, false);
+
+            // Фиксируем позицию повторно при стабилизации разметки
+            requestAnimationFrame(() => {
+              scrollMessageToCenter(target, false);
+              setTimeout(() => {
+                scrollMessageToCenter(target, false);
+                isJumpingToQuote = false;
+                updateScrollToBottomVisibility();
+              }, 80);
+            });
+
+            target.classList.remove('highlight-quote');
+            void target.offsetWidth;
+            target.classList.add('highlight-quote');
+            setTimeout(() => {
+              target.classList.remove('highlight-quote');
+            }, 1600);
+          } else {
+            isJumpingToQuote = false;
+          }
+        } else {
+          isJumpingToQuote = false;
+          showAppDialog({ title: 'Сообщение не найдено', message: 'Цитируемое сообщение не найдено или было удалено.' });
+        }
+      } else if (res.status === 404) {
+        isJumpingToQuote = false;
+        showAppDialog({ title: 'Сообщение не найдено', message: 'Цитируемое сообщение не найдено или было удалено.' });
+      } else {
+        isJumpingToQuote = false;
+        showAppDialog({ title: 'Ошибка загрузки', message: 'Не удалось загрузить историю вокруг сообщения.' });
+      }
+    } catch (e) {
+      isJumpingToQuote = false;
+      console.warn('Failed to load messages around quote:', e);
+      showAppDialog({ title: 'Ошибка сети', message: 'Не удалось связаться с сервером для загрузки сообщения.' });
+    }
+  }
+  updateScrollToBottomVisibility();
 }
 
 export function openMessageActionMenu(msg, bubbleElement) {
@@ -801,9 +1029,27 @@ export function openMessageActionMenu(msg, bubbleElement) {
   activeActionMessage = msg;
   backdrop.classList.add('active');
 
+  const isPending = msg.status === 'pending' || String(msg.id).startsWith('temp_');
+  const reactionsPill = menu.querySelector('.message-reactions-pill');
+  const btnActionReply = document.getElementById('btnActionReply');
+  const btnActionCopy = document.getElementById('btnActionCopy');
+  const btnActionCancelPending = document.getElementById('btnActionCancelPending');
+
+  if (isPending) {
+    if (reactionsPill) reactionsPill.style.display = 'none';
+    if (btnActionReply) btnActionReply.style.display = 'none';
+    if (btnActionCopy) btnActionCopy.style.display = 'none';
+    if (btnActionCancelPending) btnActionCancelPending.style.display = 'flex';
+  } else {
+    if (reactionsPill) reactionsPill.style.display = 'flex';
+    if (btnActionReply) btnActionReply.style.display = 'flex';
+    if (btnActionCopy) btnActionCopy.style.display = 'flex';
+    if (btnActionCancelPending) btnActionCancelPending.style.display = 'none';
+  }
+
   const rect = bubbleElement.getBoundingClientRect();
   const menuWidth = 260;
-  const menuHeight = 110;
+  const menuHeight = isPending ? 60 : 110;
 
   let left = rect.left + rect.width / 2 - menuWidth / 2;
   left = Math.max(16, Math.min(window.innerWidth - menuWidth - 16, left));
@@ -818,6 +1064,25 @@ export function openMessageActionMenu(msg, bubbleElement) {
   menu.style.top = `${top}px`;
 }
 
+export function cancelPendingMessage(tempId) {
+  if (!tempId) return;
+  outboxQueue = outboxQueue.filter(item => item.temp_id !== tempId && item.id !== tempId);
+  saveOutbox();
+
+  const domId = getMsgDomId(tempId);
+  const el = document.getElementById(domId) || document.getElementById(tempId);
+  if (el) el.remove();
+
+  if (currentChannelId) {
+    try {
+      const cacheKey = `sharada_cached_messages_${currentChannelId}`;
+      let cached = JSON.parse(localStorage.getItem(cacheKey) || '[]');
+      cached = cached.filter(m => m.id !== tempId);
+      localStorage.setItem(cacheKey, JSON.stringify(cached));
+    } catch (e) {}
+  }
+}
+
 export function closeMessageActionMenu() {
   const backdrop = document.getElementById('messageActionBackdrop');
   if (backdrop) backdrop.classList.remove('active');
@@ -825,55 +1090,78 @@ export function closeMessageActionMenu() {
 }
 
 export function toggleReaction(msg, emoji) {
-  if (!msg || !msg.id) return;
-  if (!msg.reactions) msg.reactions = {};
+  if (!msg || !msg.id || !emoji) return;
 
-  const currentCount = msg.reactions[emoji] || 0;
-  if (currentCount > 0) {
-    msg.reactions[emoji] = currentCount - 1;
-    if (msg.reactions[emoji] <= 0) delete msg.reactions[emoji];
-  } else {
-    msg.reactions[emoji] = 1;
+  if (currentChannelId) {
+    authFetch(`/api/channels/${currentChannelId}/reactions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message_id: msg.id, emoji: emoji })
+    }).then(async res => {
+      if (res.ok) {
+        const data = await res.json();
+        updateMessageReactionsInUI(data.message_id, data.reactions);
+      }
+    }).catch(err => {
+      console.warn('Reaction request error:', err);
+    });
   }
+}
 
+export function updateMessageReactionsInUI(messageId, reactionsData) {
+  let rx = reactionsData;
+  if (typeof rx === 'string' && rx.trim()) {
+    try { rx = JSON.parse(rx); } catch(e) { rx = null; }
+  }
+  if (!rx || typeof rx !== 'object') rx = {};
+
+  // Обновляем в локальном кэше сообщений
   if (currentChannelId) {
     try {
       const cacheKey = `sharada_cached_messages_${currentChannelId}`;
       const cached = JSON.parse(localStorage.getItem(cacheKey) || '[]');
-      const target = cached.find(m => String(m.id) === String(msg.id));
+      const target = cached.find(m => String(m.id) === String(messageId));
       if (target) {
-        target.reactions = msg.reactions;
+        target.reactions = rx;
         localStorage.setItem(cacheKey, JSON.stringify(cached));
       }
-    } catch (e) {}
+    } catch(e) {}
   }
 
-  const domId = getMsgDomId(msg.id);
+  const domId = getMsgDomId(messageId);
   const bubble = document.getElementById(domId);
-  if (bubble) {
-    let reactionsRow = bubble.querySelector('.message-reactions-row');
-    const chips = Object.entries(msg.reactions).map(([em, cnt]) => {
-      if (!cnt || cnt <= 0) return '';
-      return `<button type="button" class="message-reaction-chip active" data-emoji="${escapeHtml(em)}">${escapeHtml(em)} <span>${cnt}</span></button>`;
-    }).filter(Boolean).join('');
+  if (!bubble) return;
 
-    if (chips) {
-      if (!reactionsRow) {
-        reactionsRow = document.createElement('div');
-        reactionsRow.className = 'message-reactions-row';
-        const meta = bubble.querySelector('.message-meta');
-        bubble.insertBefore(reactionsRow, meta);
-      }
-      reactionsRow.innerHTML = chips;
-      reactionsRow.querySelectorAll('.message-reaction-chip').forEach(chip => {
-        chip.addEventListener('click', (e) => {
-          e.stopPropagation();
-          toggleReaction(msg, chip.dataset.emoji);
-        });
-      });
-    } else if (reactionsRow) {
-      reactionsRow.remove();
+  const currentUser = getCurrentUser();
+  const currentUsername = currentUser?.username;
+
+  const chips = Object.entries(rx).map(([em, val]) => {
+    const count = Array.isArray(val) ? val.length : (typeof val === 'number' ? val : 0);
+    if (!count || count <= 0) return '';
+    const isMine = Array.isArray(val) && currentUsername ? val.includes(currentUsername) : false;
+    return `<button type="button" class="message-reaction-chip ${isMine ? 'active' : ''}" data-emoji="${escapeHtml(em)}">${escapeHtml(em)} <span>${count}</span></button>`;
+  }).filter(Boolean).join('');
+
+  let reactionsRow = bubble.querySelector('.message-reactions-row');
+  if (chips) {
+    if (!reactionsRow) {
+      reactionsRow = document.createElement('div');
+      reactionsRow.className = 'message-reactions-row';
+      const meta = bubble.querySelector('.message-meta');
+      bubble.insertBefore(reactionsRow, meta);
     }
+    reactionsRow.innerHTML = chips;
+    reactionsRow.querySelectorAll('.message-reaction-chip').forEach(chip => {
+      chip.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleReaction({ id: messageId }, chip.dataset.emoji);
+      });
+    });
+    if (window.twemoji) {
+      try { window.twemoji.parse(reactionsRow, { folder: 'svg', ext: '.svg' }); } catch(e){}
+    }
+  } else if (reactionsRow) {
+    reactionsRow.remove();
   }
 }
 
@@ -926,10 +1214,61 @@ function setupSwipeToReply(bubble, msg) {
 export function createMessageElement(msg, index = 0) {
   const currentUser = getCurrentUser();
   const isMine = (currentUser && String(msg.sender_id) === String(currentUser.id)) || msg.sender_id === 'me' || msg.status === 'pending';
-  const bubble = document.createElement('div');
   const domId = getMsgDomId(msg.id);
+  const mDateKey = getChatDateKey(msg.created_at || new Date().toISOString());
+
+  // Отображение событий звонков в истории чата
+  if (msg.content && String(msg.content).startsWith('[CALL:')) {
+    const parts = msg.content.slice(1, -1).split(':');
+    const callType = parts[1]; // 'ended' or 'missed'
+    const isMissed = callType === 'missed';
+    const timeStr = new Date(msg.created_at || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    let desc = timeStr;
+    if (!isMissed) {
+      const secs = parseInt(parts[2] || '0', 10);
+      const m = Math.floor(secs / 60);
+      const s = secs % 60;
+      const durStr = m > 0 ? `${m} мин ${s} сек` : `${s} сек`;
+      desc = `${durStr} • ${timeStr}`;
+    }
+
+    const card = document.createElement('div');
+    if (domId) card.id = domId;
+    card.className = `call-event-card ${isMissed ? 'call-missed' : 'call-ended'}`;
+    card.dataset.dateKey = mDateKey;
+    if (typeof index === 'number' && index > 0) {
+      card.style.animationDelay = `${Math.min(index * 25, 300)}ms`;
+    }
+    card.innerHTML = `
+      <div class="call-event-icon">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+          <path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/>
+        </svg>
+      </div>
+      <div class="call-event-info">
+        <div class="call-event-title">${isMissed ? 'Пропущенный вызов' : 'Аудиозвонок'}</div>
+        <div class="call-event-subtitle">${escapeHtml(desc)}</div>
+      </div>
+      <button type="button" class="call-event-callback-btn">Перезвонить</button>
+    `;
+
+    const btnCallback = card.querySelector('.call-event-callback-btn');
+    if (btnCallback) {
+      btnCallback.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const currentChan = cachedChannels.find(c => c.id === currentChannelId);
+        if (currentChan) {
+          startVoiceCall(currentChan);
+        }
+      });
+    }
+    return card;
+  }
+
+  const bubble = document.createElement('div');
   if (domId) bubble.id = domId;
   bubble.className = `message-bubble ${isMine ? 'outgoing' : 'incoming'}`;
+  bubble.dataset.dateKey = mDateKey;
   if (typeof index === 'number' && index > 0) {
     bubble.style.animationDelay = `${Math.min(index * 25, 300)}ms`;
   }
@@ -939,12 +1278,15 @@ export function createMessageElement(msg, index = 0) {
   // 1. Quoted message block (if this message is a reply)
   let quoteHtml = '';
   if (msg.reply_to) {
-    const q = typeof msg.reply_to === 'string' ? JSON.parse(msg.reply_to) : msg.reply_to;
+    let q = msg.reply_to;
+    if (typeof q === 'string') {
+      try { q = JSON.parse(q); } catch (e) { q = null; }
+    }
     if (q && q.content) {
       quoteHtml = `
         <div class="message-quote-box" data-quote-id="${escapeHtml(String(q.id || ''))}">
           <div class="quote-content">
-            <div class="quote-author">${escapeHtml(q.sender_display_name || q.sender_name || 'Собеседник')}</div>
+            <div class="quote-author">${escapeHtml(q.sender_display_name || q.sender_name || q.sender || 'Собеседник')}</div>
             <div class="quote-text">${escapeHtml(q.content)}</div>
           </div>
         </div>
@@ -954,10 +1296,18 @@ export function createMessageElement(msg, index = 0) {
 
   // 2. Reactions row
   let reactionsHtml = '';
-  if (msg.reactions && Object.keys(msg.reactions).length > 0) {
-    const chips = Object.entries(msg.reactions).map(([emoji, count]) => {
+  let rx = msg.reactions;
+  if (typeof rx === 'string' && rx.trim()) {
+    try { rx = JSON.parse(rx); } catch(e) { rx = null; }
+  }
+  if (rx && typeof rx === 'object') {
+    const currentUser = getCurrentUser();
+    const currentUsername = currentUser?.username;
+    const chips = Object.entries(rx).map(([emoji, val]) => {
+      const count = Array.isArray(val) ? val.length : (typeof val === 'number' ? val : 0);
       if (!count || count <= 0) return '';
-      return `<button type="button" class="message-reaction-chip active" data-emoji="${escapeHtml(emoji)}">${escapeHtml(emoji)} <span>${count}</span></button>`;
+      const isMine = Array.isArray(val) && currentUsername ? val.includes(currentUsername) : false;
+      return `<button type="button" class="message-reaction-chip ${isMine ? 'active' : ''}" data-emoji="${escapeHtml(emoji)}">${escapeHtml(emoji)} <span>${count}</span></button>`;
     }).filter(Boolean).join('');
     if (chips) {
       reactionsHtml = `<div class="message-reactions-row">${chips}</div>`;
@@ -967,9 +1317,12 @@ export function createMessageElement(msg, index = 0) {
   const currentChan = cachedChannels.find(c => c.id === (msg.channel_id || currentChannelId));
   const isGroup = currentChan?.type === 'group';
   const showAuthor = !isMine && isGroup;
-  const senderName = msg.sender_display_name || msg.sender_name || msg.sender || 'Собеседник';
+  const authorHtml = showAuthor
+    ? `<div class="message-author">${renderUserDisplayNameHTML({ username: msg.sender_name || msg.sender, display_name: msg.sender_display_name, id: msg.sender_id })}</div>`
+    : '';
+
   bubble.innerHTML = `
-    ${showAuthor ? `<div class="message-author">${escapeHtml(senderName)}</div>` : ''}
+    ${authorHtml}
     ${quoteHtml}
     <div class="message-text">${escapeHtml(msg.content)}</div>
     ${reactionsHtml}
@@ -1028,7 +1381,7 @@ export function createMessageElement(msg, index = 0) {
   return bubble;
 }
 
-export function appendMessageToUI(msg, index = 0) {
+export function appendMessageToUI(msg, index = 0, autoScroll = true) {
   if (!messagesContainer || !msg) return;
 
   const domId = getMsgDomId(msg.id);
@@ -1084,9 +1437,28 @@ export function appendMessageToUI(msg, index = 0) {
     }
   }
 
+  // Разделители дат: проверяем дату предыдущего элемента в контейнере
+  const mDateKey = getChatDateKey(msg.created_at || new Date().toISOString());
+  const existingItems = messagesContainer.querySelectorAll('.message-bubble, .call-event-card');
+  let prevDateKey = null;
+  if (existingItems.length > 0) {
+    prevDateKey = existingItems[existingItems.length - 1].dataset.dateKey;
+  }
+  if (mDateKey && mDateKey !== prevDateKey) {
+    messagesContainer.appendChild(createDateSeparatorElement(msg.created_at || new Date().toISOString()));
+  }
+
   const bubble = createMessageElement(msg, index);
   messagesContainer.appendChild(bubble);
-  scrollChatToBottom();
+
+  if (window.twemoji && bubble) {
+    try { window.twemoji.parse(bubble, { folder: 'svg', ext: '.svg' }); } catch(e){}
+  }
+
+  if (autoScroll) {
+    scrollChatToBottom();
+  }
+  updateScrollToBottomVisibility();
   return bubble;
 }
 
@@ -1551,13 +1923,16 @@ export function requestNotificationPermission() {
   } catch (e) {}
 }
 
-export function showDesktopNotification(title, body, channelId) {
+export function showDesktopNotification(title, body, channelId, entity = null) {
   try {
     if (!('Notification' in window) || Notification.permission !== 'granted') return;
 
-    const notif = new Notification(title || 'Sharada Messenger', {
+    const iconUrl = entity ? getAvatarDataUri(entity, 128) : 'assets/icons/app-icon.png';
+    const plainTitle = typeof title === 'object' ? getUserDisplayNameText(title) : (title || 'Sharada Messenger');
+
+    const notif = new Notification(plainTitle, {
       body: body || 'Новое сообщение',
-      icon: 'assets/icons/app-icon.png',
+      icon: iconUrl,
       tag: `sharada-channel-${channelId || 'chat'}`,
       renotify: true
     });
@@ -1600,6 +1975,20 @@ export function initWebSocket() {
   setConnectionState('connecting');
   wsConn = new WebSocket(wsUrl);
 
+  setCallWsSender((type, targetId, channelId, payload) => {
+    if (wsConn && wsConn.readyState === WebSocket.OPEN) {
+      const curUser = getCurrentUser();
+      wsConn.send(JSON.stringify({
+        type,
+        target_id: targetId || '',
+        channel_id: channelId || '',
+        sender_id: curUser?.id,
+        sender_name: curUser?.display_name || curUser?.username,
+        payload
+      }));
+    }
+  });
+
   wsConn.onopen = () => {
     setConnectionState('connected');
     onlineUsers.clear();
@@ -1621,8 +2010,12 @@ export function initWebSocket() {
           const isChatActiveAndFocused = (msg.channel_id === currentChannelId && document.hasFocus());
           if (!isChatActiveAndFocused) {
             playNotificationSound();
-            const senderTitle = messageData.sender_name || 'Новое сообщение';
-            showDesktopNotification(senderTitle, messageData.content, msg.channel_id);
+            const chan = cachedChannels.find(c => c.id === msg.channel_id);
+            const avatarEntity = messageData.sender_avatar
+              ? { avatar_url: messageData.sender_avatar, id: messageData.sender_id, username: messageData.sender_name, display_name: messageData.sender_display_name }
+              : (chan || { id: messageData.sender_id, username: messageData.sender_name, display_name: messageData.sender_display_name });
+            const senderTitle = getUserDisplayNameText(chan || { username: messageData.sender_name, display_name: messageData.sender_display_name });
+            showDesktopNotification(senderTitle, messageData.content, msg.channel_id, avatarEntity);
           }
         }
 
@@ -1687,6 +2080,13 @@ export function initWebSocket() {
         if (msg.sender_id) onlineUsers.delete(msg.sender_id);
         if (msg.sender_name) onlineUsers.delete(msg.sender_name);
         updateOnlineStatusUI();
+      } else if (msg.type === 'message_reaction') {
+        const payload = typeof msg.payload === 'string' ? JSON.parse(msg.payload) : msg.payload;
+        if (payload && payload.message_id) {
+          updateMessageReactionsInUI(payload.message_id, payload.reactions);
+        }
+      } else if (msg.type && msg.type.startsWith('call_')) {
+        handleIncomingCallWsEvent(msg);
       }
     } catch (e) {
       console.warn('WS message parse error', e);
@@ -1781,6 +2181,15 @@ export function initChatEvents() {
     btnCancelReply.addEventListener('click', cancelReply);
   }
 
+  // Кнопка закрытия предупреждения об архивном пользователе
+  const btnCloseArchivedNotice = document.getElementById('btnCloseArchivedNotice');
+  if (btnCloseArchivedNotice) {
+    btnCloseArchivedNotice.addEventListener('click', () => {
+      const banner = document.getElementById('archivedUserNoticeBanner');
+      if (banner) banner.classList.add('hidden');
+    });
+  }
+
   // Всплывающее меню сообщения: затемненный фон закрывает меню при клике
   const messageActionBackdrop = document.getElementById('messageActionBackdrop');
   if (messageActionBackdrop) {
@@ -1817,6 +2226,17 @@ export function initChatEvents() {
     btnActionReply.addEventListener('click', () => {
       if (activeActionMessage) {
         setReplyingTo(activeActionMessage);
+      }
+      closeMessageActionMenu();
+    });
+  }
+
+  // Кнопка "Отменить отправку" для зависших/исходящих сообщений
+  const btnActionCancelPending = document.getElementById('btnActionCancelPending');
+  if (btnActionCancelPending) {
+    btnActionCancelPending.addEventListener('click', () => {
+      if (activeActionMessage && activeActionMessage.id) {
+        cancelPendingMessage(activeActionMessage.id);
       }
       closeMessageActionMenu();
     });
@@ -1882,26 +2302,72 @@ export function initChatEvents() {
     });
   }
 
-  // Пагинация сообщений: при скролле к самому верху подгружаем старые сообщения
+  // Пагинация сообщений: при скролле к верху — старые, при скролле к низу — новые (после перехода к цитате)
   if (messagesContainer) {
     messagesContainer.addEventListener('scroll', () => {
+      updateScrollToBottomVisibility();
+      if (isJumpingToQuote) return;
+
       if (messagesContainer.scrollTop < 60 && hasMoreMessages && !isLoadingMore && currentChannelId && currentOldestMessageId) {
         loadOlderMessages(currentChannelId);
+      }
+      if (hasMoreNewer && !isLoadingNewer && currentChannelId && currentNewestMessageId) {
+        const distFromBottom = messagesContainer.scrollHeight - messagesContainer.scrollTop - messagesContainer.clientHeight;
+        if (distFromBottom < 300) {
+          loadNewerMessages(currentChannelId);
+        }
+      }
+    });
+
+    // Обработка скролла колесиком у самого низа, когда scrollbar уже уперся в пол
+    messagesContainer.addEventListener('wheel', (e) => {
+      if (isJumpingToQuote) return;
+      if (e.deltaY > 0 && hasMoreNewer && !isLoadingNewer && currentChannelId && currentNewestMessageId) {
+        const distFromBottom = messagesContainer.scrollHeight - messagesContainer.scrollTop - messagesContainer.clientHeight;
+        if (distFromBottom < 100) {
+          loadNewerMessages(currentChannelId);
+        }
+      }
+    }, { passive: true });
+
+    // Делегированный клик по цитируемому сообщению
+    messagesContainer.addEventListener('click', (e) => {
+      const quoteBox = e.target.closest('.message-quote-box');
+      if (quoteBox) {
+        e.stopPropagation();
+        const quoteId = quoteBox.dataset.quoteId;
+        if (quoteId) {
+          scrollToOriginalMessage(quoteId);
+        }
       }
     });
   }
 
-  // Кнопка аудиозвонка в шапке чата
+  // Кнопка быстрого плавного перехода в самый конец чата
+  const btnScrollToBottom = document.getElementById('btnScrollToBottom');
+  if (btnScrollToBottom) {
+    btnScrollToBottom.addEventListener('click', async () => {
+      btnScrollToBottom.classList.add('hidden');
+      if (hasMoreNewer && currentChannelId) {
+        await loadMessages(currentChannelId);
+      }
+      scrollChatToBottom(true);
+    });
+  }
+
+  // Кнопка аудиозвонка в шапке чата (строго direct P2P WebRTC)
   const btnStartCall = document.getElementById('btnStartCall');
   if (btnStartCall) {
     btnStartCall.addEventListener('click', () => {
-      showAppDialog({
-        title: 'Защищенные звонки',
-        message: 'Голосовые P2P-звонки со сквозным шифрованием (E2EE WebRTC) находятся в финальной стадии интеграции и будут активированы в следующем релизе.',
-        confirmText: 'Понятно'
-      });
+      const channel = cachedChannels.find(c => c.id === currentChannelId);
+      if (channel && channel.type === 'direct') {
+        startVoiceCall(channel);
+      }
     });
   }
+
+  // Инициализируем элементы и слушатели звонков
+  initVoiceCallEvents();
 
   // Кнопка прикрепления файлов
   const btnAttachFile = document.getElementById('btnAttachFile');
@@ -1915,8 +2381,384 @@ export function initChatEvents() {
     });
   }
 
+  // Инициализация контекстного меню чата и каталога обоев
+  initChatHeaderMenu();
+  initWallpaperPicker();
+
   // Запрос разрешения на отправку уведомлений при первом клике пользователя
   document.addEventListener('click', requestNotificationPermission, { once: true });
+}
+
+// ==========================================================
+// КАТАЛОГ ОБОЕВ И ТЕМАТИЧЕСКАЯ КАСТОМИЗАЦИЯ ЧАТОВ
+// ==========================================================
+export const CHAT_WALLPAPERS = [
+  {
+    id: 'default',
+    title: 'По умолчанию',
+    file: '',
+    incoming: '#242424',
+    outgoing: '#ba1111',
+    outgoingMid: '#940a0a',
+    outgoingLight: '#e01616',
+    isDefault: true
+  },
+  {
+    id: 'dark_water',
+    title: 'Тёмная рябь',
+    file: 'assets/wallpapers/dark_water.jpg',
+    incoming: '#1E293B',
+    outgoing: '#D97706'
+  },
+  {
+    id: 'dusk_sky',
+    title: 'Розовый закат',
+    file: 'assets/wallpapers/dusk_sky.jpg',
+    incoming: '#2E294E',
+    outgoing: '#E06D8C'
+  },
+  {
+    id: 'night_glitter',
+    title: 'Изумрудная текстура',
+    file: 'assets/wallpapers/night_glitter.jpg',
+    incoming: '#1A2421',
+    outgoing: '#2DD4BF'
+  },
+  {
+    id: 'palm_silhouettes',
+    title: 'Силуэты пальм',
+    file: 'assets/wallpapers/palm_silhouettes.jpg',
+    incoming: '#27272A',
+    outgoing: '#E4E4E7'
+  },
+  {
+    id: 'minimal_spheres',
+    title: 'Сферы и воздух',
+    file: 'assets/wallpapers/minimal_spheres.jpg',
+    incoming: '#FFFFFF',
+    outgoing: '#60A5FA'
+  },
+  {
+    id: 'pebble_shore',
+    title: 'Речная галька',
+    file: 'assets/wallpapers/pebble_shore.jpg',
+    incoming: '#3F3F46',
+    outgoing: '#A8A29E'
+  },
+  {
+    id: 'deep_space',
+    title: 'Тёмный градиент',
+    file: 'assets/wallpapers/deep_space.jpg',
+    incoming: '#18181B',
+    outgoing: '#6366F1'
+  },
+  {
+    id: 'fresh_foliage',
+    title: 'Сочная листва',
+    file: 'assets/wallpapers/fresh_foliage.jpg',
+    incoming: '#064E3B',
+    outgoing: '#22C55E'
+  },
+  {
+    id: 'golden_ripples',
+    title: 'Золотая гладь',
+    file: 'assets/wallpapers/golden_ripples.jpg',
+    incoming: '#1F2937',
+    outgoing: '#F59E0B'
+  }
+];
+
+function hexToRgba(hex, alpha = 1) {
+  if (!hex || !hex.startsWith('#')) return `rgba(224, 22, 22, ${alpha})`;
+  let c = hex.substring(1);
+  if (c.length === 3) c = c.split('').map(x => x + x).join('');
+  const num = parseInt(c, 16);
+  const r = (num >> 16) & 255;
+  const g = (num >> 8) & 255;
+  const b = num & 255;
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+function getStoredChatWallpaper(channelId) {
+  try {
+    return localStorage.getItem(`sharada_wallpaper_${channelId}`) || 'default';
+  } catch (e) {
+    return 'default';
+  }
+}
+
+function setStoredChatWallpaper(channelId, wallpaperId) {
+  try {
+    localStorage.setItem(`sharada_wallpaper_${channelId}`, wallpaperId);
+  } catch (e) {}
+}
+
+export function applyCurrentChatWallpaper(channelId) {
+  const wallpaperId = getStoredChatWallpaper(channelId);
+  const wp = CHAT_WALLPAPERS.find(w => w.id === wallpaperId) || CHAT_WALLPAPERS[0];
+  const chatWindow = document.getElementById('activeChatWindow');
+  const root = document.documentElement;
+
+  if (chatWindow) {
+    if (wp.file) {
+      chatWindow.style.backgroundImage = `url("${wp.file}")`;
+      chatWindow.style.backgroundColor = '#0d0d0d';
+    } else {
+      chatWindow.style.backgroundImage = 'none';
+      chatWindow.style.backgroundColor = 'transparent';
+    }
+  }
+
+  // Настройка цветов для сообщений и круга
+  if (wp.isDefault) {
+    root.style.setProperty('--chat-incoming-bg', 'var(--bg-card)');
+    root.style.setProperty('--chat-incoming-color', '#f0f0f0');
+    root.style.setProperty('--chat-outgoing-bg', 'linear-gradient(135deg, #ba1111, #940a0a)');
+    root.style.setProperty('--chat-outgoing-color', '#ffffff');
+    root.style.setProperty('--chat-outgoing-shadow', '0 4px 14px rgba(186, 17, 17, 0.35)');
+    root.style.setProperty('--ambient-circle-color', '#ff2222');
+    root.style.setProperty('--ambient-circle-mid', '#d81414');
+    root.style.setProperty('--ambient-circle-fade', 'rgba(186, 17, 17, 0.45)');
+  } else {
+    // Входящие сообщения
+    const isIncLight = wp.incoming.toLowerCase() === '#ffffff' || wp.incoming.toLowerCase() === '#e4e4e7';
+    root.style.setProperty('--chat-incoming-bg', wp.incoming);
+    root.style.setProperty('--chat-incoming-color', isIncLight ? '#0f172a' : '#ffffff');
+
+    // Исходящие сообщения
+    const isOutLight = wp.outgoing.toLowerCase() === '#e4e4e7' || wp.outgoing.toLowerCase() === '#ffffff';
+    root.style.setProperty('--chat-outgoing-bg', wp.outgoing);
+    root.style.setProperty('--chat-outgoing-color', isOutLight ? '#09090b' : '#ffffff');
+    root.style.setProperty('--chat-outgoing-shadow', `0 4px 16px ${hexToRgba(wp.outgoing, 0.35)}`);
+
+    // Фоновый круг на сайте соцсети
+    root.style.setProperty('--ambient-circle-color', wp.outgoing);
+    root.style.setProperty('--ambient-circle-mid', hexToRgba(wp.outgoing, 0.75));
+    root.style.setProperty('--ambient-circle-fade', hexToRgba(wp.outgoing, 0.35));
+  }
+}
+
+export function closeChatHeaderMenu() {
+  const menu = document.getElementById('chatHeaderMenuDropdown');
+  if (menu) menu.classList.add('hidden');
+}
+
+function initChatHeaderMenu() {
+  const btnToggle = document.getElementById('btnChatMenuToggle');
+  const menu = document.getElementById('chatHeaderMenuDropdown');
+  const btnChangeWallpaper = document.getElementById('btnMenuChangeWallpaper');
+
+  if (btnToggle && menu) {
+    btnToggle.addEventListener('click', (e) => {
+      e.stopPropagation();
+      menu.classList.toggle('hidden');
+    });
+
+    document.addEventListener('click', (e) => {
+      if (!menu.contains(e.target) && !btnToggle.contains(e.target)) {
+        menu.classList.add('hidden');
+      }
+    });
+  }
+
+  if (btnChangeWallpaper) {
+    btnChangeWallpaper.addEventListener('click', () => {
+      closeChatHeaderMenu();
+      openWallpaperPicker();
+    });
+  }
+}
+
+let isWallpaperMorphing = false;
+
+export function openWallpaperPicker() {
+  const capsule = document.getElementById('chatMorphCapsule');
+  const inputContent = document.getElementById('chatInputContent');
+  const wallpaperContent = document.getElementById('chatWallpaperContent');
+  if (!capsule || !inputContent || !wallpaperContent) return;
+  if (!wallpaperContent.classList.contains('hidden')) return;
+  if (isWallpaperMorphing) return;
+
+  isWallpaperMorphing = true;
+
+  // 1. Фиксируем начальную высоту капсулы (высота строки ввода сообщения)
+  const initialHeight = capsule.offsetHeight;
+  capsule.style.height = `${initialHeight}px`;
+
+  // 2. ФАЗА 1: Внутрянка строки ввода плавно исчезает
+  inputContent.classList.remove('morph-fade-in', 'morph-fade-in-prep');
+  inputContent.classList.add('morph-fade-out');
+
+  // Заполняем карусель обоями
+  renderWallpaperCarousel();
+
+  setTimeout(() => {
+    // Скрываем внутрянку строки ввода
+    inputContent.classList.add('hidden');
+    inputContent.classList.remove('morph-fade-out');
+
+    // Подготавливаем блок каталога обоев к появлению (в DOM, но прозрачный)
+    wallpaperContent.classList.remove('hidden');
+    wallpaperContent.classList.add('morph-fade-in-prep');
+
+    // ФАЗА 2: Плавно меняется размер контейнера капсулы
+    capsule.style.height = 'auto';
+    const targetHeight = capsule.offsetHeight;
+    capsule.style.height = `${initialHeight}px`;
+    capsule.offsetHeight; // форсируем reflow
+
+    capsule.classList.add('mode-wallpaper');
+    capsule.style.height = `${targetHeight}px`;
+
+    // ФАЗА 3: Плавно появляется новый контент каталога обоев
+    setTimeout(() => {
+      wallpaperContent.classList.remove('morph-fade-in-prep');
+      wallpaperContent.classList.add('morph-fade-in');
+
+      setTimeout(() => {
+        capsule.style.height = '';
+        wallpaperContent.classList.remove('morph-fade-in');
+        isWallpaperMorphing = false;
+      }, 260);
+    }, 140);
+  }, 170);
+}
+
+export function closeWallpaperPicker(instant = false) {
+  const capsule = document.getElementById('chatMorphCapsule');
+  const inputContent = document.getElementById('chatInputContent');
+  const wallpaperContent = document.getElementById('chatWallpaperContent');
+  if (!capsule || !inputContent || !wallpaperContent) return;
+  if (wallpaperContent.classList.contains('hidden')) return;
+
+  if (instant) {
+    isWallpaperMorphing = false;
+    capsule.classList.remove('mode-wallpaper');
+    capsule.style.height = '';
+    wallpaperContent.classList.add('hidden');
+    wallpaperContent.classList.remove('morph-fade-out', 'morph-fade-in', 'morph-fade-in-prep');
+    inputContent.classList.remove('hidden', 'morph-fade-out', 'morph-fade-in', 'morph-fade-in-prep');
+    return;
+  }
+
+  if (isWallpaperMorphing) return;
+  isWallpaperMorphing = true;
+
+  // 1. Фиксируем начальную высоту капсулы (высота панели каталога обоев)
+  const initialHeight = capsule.offsetHeight;
+  capsule.style.height = `${initialHeight}px`;
+
+  // 2. ФАЗА 1: Внутрянка обоев плавно исчезает
+  wallpaperContent.classList.remove('morph-fade-in', 'morph-fade-in-prep');
+  wallpaperContent.classList.add('morph-fade-out');
+
+  setTimeout(() => {
+    // Скрываем блок обоев
+    wallpaperContent.classList.add('hidden');
+    wallpaperContent.classList.remove('morph-fade-out');
+
+    // Подготавливаем блок строки ввода к появлению (в DOM, но прозрачный)
+    inputContent.classList.remove('hidden');
+    inputContent.classList.add('morph-fade-in-prep');
+
+    // ФАЗА 2: Плавно меняется размер контейнера (сжатие обратно в строку)
+    capsule.style.height = 'auto';
+    const targetHeight = capsule.offsetHeight;
+    capsule.style.height = `${initialHeight}px`;
+    capsule.offsetHeight; // форсируем reflow
+
+    capsule.classList.remove('mode-wallpaper');
+    capsule.style.height = `${targetHeight}px`;
+
+    // ФАЗА 3: Плавно появляется строка ввода
+    setTimeout(() => {
+      inputContent.classList.remove('morph-fade-in-prep');
+      inputContent.classList.add('morph-fade-in');
+
+      setTimeout(() => {
+        capsule.style.height = '';
+        inputContent.classList.remove('morph-fade-in');
+        isWallpaperMorphing = false;
+      }, 260);
+    }, 140);
+  }, 170);
+}
+
+function renderWallpaperCarousel() {
+  const track = document.getElementById('wallpaperCarouselTrack');
+  if (!track || !currentChannelId) return;
+
+  const currentWpId = getStoredChatWallpaper(currentChannelId);
+  track.innerHTML = '';
+
+  CHAT_WALLPAPERS.forEach(wp => {
+    const card = document.createElement('div');
+    card.className = `wallpaper-card ${wp.id === currentWpId ? 'active' : ''}`;
+    card.dataset.wallpaperId = wp.id;
+
+    const previewHtml = wp.file 
+      ? `<img src="${wp.file}" class="wallpaper-card-img" alt="${escapeHtml(wp.title)}" />` 
+      : `<div class="wallpaper-card-default-bg"></div>`;
+
+    card.innerHTML = `
+      ${previewHtml}
+      <div class="wallpaper-card-overlay"></div>
+      <div class="wallpaper-card-badge">
+        <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="20 6 9 17 4 12"></polyline>
+        </svg>
+      </div>
+      <div class="wallpaper-card-info">
+        <span class="wallpaper-card-name">${escapeHtml(wp.title)}</span>
+        <div class="wallpaper-card-colors">
+          <span class="wallpaper-color-dot" style="background:${wp.incoming};" title="Входящие"></span>
+          <span class="wallpaper-color-dot" style="background:${wp.outgoing};" title="Исходящие"></span>
+        </div>
+      </div>
+    `;
+
+    card.addEventListener('click', () => {
+      track.querySelectorAll('.wallpaper-card').forEach(c => c.classList.remove('active'));
+      card.classList.add('active');
+      setStoredChatWallpaper(currentChannelId, wp.id);
+      applyCurrentChatWallpaper(currentChannelId);
+    });
+
+    track.appendChild(card);
+  });
+}
+
+function initWallpaperPicker() {
+  const btnClose = document.getElementById('btnCloseWallpaperPicker');
+  if (btnClose) {
+    btnClose.addEventListener('click', closeWallpaperPicker);
+  }
+
+  const btnPrev = document.getElementById('btnWallpaperPrev');
+  const btnNext = document.getElementById('btnWallpaperNext');
+  const track = document.getElementById('wallpaperCarouselTrack');
+
+  if (btnPrev && track) {
+    btnPrev.addEventListener('click', () => {
+      track.scrollBy({ left: -220, behavior: 'smooth' });
+    });
+  }
+
+  if (btnNext && track) {
+    btnNext.addEventListener('click', () => {
+      track.scrollBy({ left: 220, behavior: 'smooth' });
+    });
+  }
+}
+
+/**
+ * Сброс фонового круга и темы на дефолтные при уходе из чатов в настройки или другие экраны
+ */
+export function resetDefaultAmbientTheme() {
+  const root = document.documentElement;
+  root.style.setProperty('--ambient-circle-color', '#ff2222');
+  root.style.setProperty('--ambient-circle-mid', '#d81414');
+  root.style.setProperty('--ambient-circle-fade', 'rgba(186, 17, 17, 0.45)');
 }
 
 // Тестовая утилита в глобальной области видимости для проверки облачка

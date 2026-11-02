@@ -5,6 +5,7 @@ import { getCurrentUser, setCurrentUser, setAuthToken, authFetch, escapeHtml } f
 import { showAppDialog, setupDropdown } from './modals.js';
 import { formatLastSeen, cachedChannels } from './chats.js';
 import { initDeveloperPanel, handleDevTriggerClick, isDevModeEnabled } from './developer.js';
+import { renderAvatarHTML, applyAvatarToElement, renderUserDisplayNameHTML } from './identity.js';
 
 // Settings UI Elements
 const settingsUserAvatar = document.getElementById('settingsUserAvatar');
@@ -208,10 +209,15 @@ export function saveLastSeenConfig(conf) {
 
 export function updateLastSeenUI() {
   const conf = getLastSeenConfig();
+  const summaryEl = document.getElementById('lastSeenExceptionsSummary');
+  const count = (conf.exceptions || []).length;
+  const distinctUsers = Math.floor(count / 2) || (count > 0 ? 1 : 0);
+  if (summaryEl) {
+    summaryEl.textContent = distinctUsers > 0 ? `${distinctUsers} пользователь(ей)` : 'Нет исключений';
+  }
   if (previewLastSeenSetting) {
-    const count = (conf.exceptions || []).length;
     const modeName = conf.mode === 'nobody' ? 'Никто' : 'Все';
-    previewLastSeenSetting.textContent = count > 0 ? `${modeName} (исключений: ${Math.floor(count / 2 || 1)})` : modeName;
+    previewLastSeenSetting.textContent = distinctUsers > 0 ? `${modeName} (${distinctUsers})` : modeName;
   }
 
   if (tgLastSeenOptionsList) {
@@ -219,62 +225,93 @@ export function updateLastSeenUI() {
       item.classList.toggle('selected', item.dataset.mode === conf.mode);
     });
   }
+}
 
-  if (lastSeenExceptionsList) {
-    lastSeenExceptionsList.innerHTML = '';
-    const directChannels = (cachedChannels || []).filter(c => c.type === 'direct');
-    if (directChannels.length === 0) {
-      lastSeenExceptionsList.innerHTML = '<div style="padding:14px; color:var(--text-muted); font-size:13px; text-align:center;">У вас пока нет начатых личных диалогов</div>';
-      return;
-    }
-
-    directChannels.forEach(ch => {
-      const isException = (conf.exceptions || []).includes(String(ch.id)) || (conf.exceptions || []).includes(String(ch.name));
-      const row = document.createElement('div');
-      row.className = 'settings-row';
-      row.style.cssText = 'padding:10px 16px; cursor:pointer;';
-
-      const dispName = ch.display_name || ch.name;
-      row.innerHTML = `
-        <div class="settings-row-left" style="gap:12px;">
-          <div class="avatar" style="width:36px; height:36px; font-size:14px;">${escapeHtml(dispName.charAt(0).toUpperCase())}</div>
-          <div class="settings-row-info">
-            <div class="settings-row-title" style="font-size:14px;">${escapeHtml(dispName)}</div>
-            <div class="settings-row-desc" style="font-size:11px;">@${escapeHtml(ch.name)}</div>
-          </div>
-        </div>
-        <input type="checkbox" ${isException ? 'checked' : ''} style="cursor:pointer; width:18px; height:18px; accent-color:var(--primary-red-accent);">
-      `;
-
-      row.addEventListener('click', (e) => {
-        const checkbox = row.querySelector('input[type="checkbox"]');
-        if (e.target !== checkbox) {
-          checkbox.checked = !checkbox.checked;
-        }
-        const curConf = getLastSeenConfig();
-        const idStr = String(ch.id);
-        const nameStr = String(ch.name);
-        if (checkbox.checked) {
-          if (!curConf.exceptions.includes(idStr)) curConf.exceptions.push(idStr);
-          if (!curConf.exceptions.includes(nameStr)) curConf.exceptions.push(nameStr);
-        } else {
-          curConf.exceptions = curConf.exceptions.filter(x => x !== idStr && x !== nameStr);
-        }
-        saveLastSeenConfig(curConf);
-      });
-
-      lastSeenExceptionsList.appendChild(row);
-    });
+export function openLastSeenExceptionsModal() {
+  const modal = document.getElementById('modalLastSeenExceptions');
+  if (modal) {
+    modal.classList.remove('hidden');
+    modal.classList.add('active');
+    renderLastSeenExceptionsList('');
   }
+}
+
+export function closeLastSeenExceptionsModal() {
+  const modal = document.getElementById('modalLastSeenExceptions');
+  if (modal) {
+    modal.classList.remove('active');
+    modal.classList.add('hidden');
+    updateLastSeenUI();
+  }
+}
+
+export function renderLastSeenExceptionsList(searchQuery = '') {
+  const listEl = document.getElementById('lastSeenExceptionsList');
+  if (!listEl) return;
+  listEl.innerHTML = '';
+  const conf = getLastSeenConfig();
+  const directChannels = (cachedChannels || []).filter(c => c.type === 'direct');
+  if (directChannels.length === 0) {
+    listEl.innerHTML = '<div style="padding:18px; color:var(--text-muted); font-size:13px; text-align:center;">У вас пока нет начатых личных диалогов</div>';
+    return;
+  }
+
+  const query = (searchQuery || '').toLowerCase().trim();
+  const filtered = directChannels.filter(ch => {
+    if (!query) return true;
+    const dn = (ch.display_name || '').toLowerCase();
+    const un = (ch.name || '').toLowerCase();
+    return dn.includes(query) || un.includes(query);
+  });
+
+  if (filtered.length === 0) {
+    listEl.innerHTML = '<div style="padding:18px; color:var(--text-muted); font-size:13px; text-align:center;">Пользователи не найдены</div>';
+    return;
+  }
+
+  filtered.forEach(ch => {
+    const isException = (conf.exceptions || []).includes(String(ch.id)) || (conf.exceptions || []).includes(String(ch.name));
+    const row = document.createElement('div');
+    row.className = 'settings-row';
+    row.style.cssText = 'padding:10px 16px; cursor:pointer; border-radius:14px;';
+
+    const avatarHtml = renderAvatarHTML(ch, { size: 36, fontSize: 14 });
+    const displayNameHtml = renderUserDisplayNameHTML(ch);
+    row.innerHTML = `
+      <div class="settings-row-left" style="gap:12px;">
+        ${avatarHtml}
+        <div class="settings-row-info">
+          <div class="settings-row-title" style="font-size:14px;">${displayNameHtml}</div>
+          <div class="settings-row-desc" style="font-size:11px;">@${escapeHtml(ch.name)}</div>
+        </div>
+      </div>
+      <input type="checkbox" ${isException ? 'checked' : ''} style="cursor:pointer; width:18px; height:18px; accent-color:var(--primary-red-accent);">
+    `;
+
+    row.addEventListener('click', (e) => {
+      const checkbox = row.querySelector('input[type="checkbox"]');
+      if (e.target !== checkbox) {
+        checkbox.checked = !checkbox.checked;
+      }
+      const curConf = getLastSeenConfig();
+      const idStr = String(ch.id);
+      const nameStr = String(ch.name);
+      if (checkbox.checked) {
+        if (!curConf.exceptions.includes(idStr)) curConf.exceptions.push(idStr);
+        if (!curConf.exceptions.includes(nameStr)) curConf.exceptions.push(nameStr);
+      } else {
+        curConf.exceptions = curConf.exceptions.filter(x => x !== idStr && x !== nameStr);
+      }
+      saveLastSeenConfig(curConf);
+    });
+
+    listEl.appendChild(row);
+  });
 }
 
 export function openLastSeenSubpage() {
   if (isSubpageOpen || !settingsSubpageLastSeen || !settingsSectionPrivacy) return;
   isSubpageOpen = true;
-
-  if (settingsNavSubbadge) {
-    settingsNavSubbadge.classList.add('visible');
-  }
 
   settingsSectionPrivacy.classList.add('tab-fade-out');
   setTimeout(() => {
@@ -294,10 +331,6 @@ export function openLastSeenSubpage() {
 export function closeLastSeenSubpage() {
   if (!isSubpageOpen || !settingsSubpageLastSeen || !settingsSectionPrivacy) return;
   isSubpageOpen = false;
-
-  if (settingsNavSubbadge) {
-    settingsNavSubbadge.classList.remove('visible');
-  }
 
   settingsSubpageLastSeen.classList.add('tab-fade-out');
   setTimeout(() => {
@@ -332,14 +365,7 @@ export function closeSettingsSectionMobile() {
 
 export function switchSettingsSection(section) {
   openSettingsSectionMobile();
-  if (currentActiveSection === section || isSwitchingSection) return;
-  isSwitchingSection = true;
-
-  if (isSubpageOpen) {
-    isSubpageOpen = false;
-    if (settingsNavSubbadge) settingsNavSubbadge.classList.remove('visible');
-    if (settingsSubpageLifecycle) settingsSubpageLifecycle.style.display = 'none';
-  }
+  if (isSwitchingSection) return;
 
   const getSectionPane = (s) => {
     if (s === 'admin') return settingsSectionAdmin;
@@ -350,8 +376,31 @@ export function switchSettingsSection(section) {
     return settingsSectionAccount;
   };
 
-  const outgoing = getSectionPane(currentActiveSection);
   const incoming = getSectionPane(section);
+
+  // Если нажали на уже активный раздел
+  if (currentActiveSection === section) {
+    if (isSubpageOpen) {
+      isSubpageOpen = false;
+      if (settingsNavSubbadge) settingsNavSubbadge.classList.remove('visible');
+      if (settingsSubpageLifecycle) settingsSubpageLifecycle.style.display = 'none';
+      if (settingsSubpageLastSeen) settingsSubpageLastSeen.style.display = 'none';
+      closeLastSeenExceptionsModal();
+      if (incoming) incoming.style.display = 'flex';
+    }
+    return;
+  }
+
+  isSwitchingSection = true;
+
+  // Обязательно закрываем все подстраницы при переключении любого таба
+  isSubpageOpen = false;
+  if (settingsNavSubbadge) settingsNavSubbadge.classList.remove('visible');
+  if (settingsSubpageLifecycle) settingsSubpageLifecycle.style.display = 'none';
+  if (settingsSubpageLastSeen) settingsSubpageLastSeen.style.display = 'none';
+  closeLastSeenExceptionsModal();
+
+  const outgoing = getSectionPane(currentActiveSection);
 
   // Переключаем активный таб в левой колонке
   [settingsNavAccount, settingsNavPrivacy, settingsNavStorage, settingsNavDevices, settingsNavAdmin, settingsNavDeveloper].forEach(el => {
@@ -379,10 +428,24 @@ export function switchSettingsSection(section) {
   }
 
   setTimeout(() => {
-    if (outgoing) {
-      outgoing.style.display = 'none';
-      outgoing.classList.remove('tab-fade-out');
-    }
+    // Гарантированно скрываем абсолютно все панели для предотвращения наложения контента
+    const allPanes = [
+      settingsSectionAccount,
+      settingsSectionPrivacy,
+      settingsSectionStorage,
+      settingsSectionDevices,
+      settingsSectionAdmin,
+      settingsSectionDeveloper,
+      settingsSubpageLifecycle,
+      settingsSubpageLastSeen
+    ];
+    allPanes.forEach(p => {
+      if (p) {
+        p.style.display = 'none';
+        p.classList.remove('tab-fade-out');
+      }
+    });
+
     if (incoming) {
       incoming.style.display = 'flex';
       incoming.classList.add('tab-fade-in');
@@ -419,14 +482,7 @@ export function initSettings() {
 
   // Переключение вкладок слева в настройках
   if (settingsNavAccount) {
-    settingsNavAccount.addEventListener('click', () => {
-      openSettingsSectionMobile();
-      if (isSubpageOpen) {
-        closeLifecycleSubpage();
-      } else {
-        switchSettingsSection('account');
-      }
-    });
+    settingsNavAccount.addEventListener('click', () => switchSettingsSection('account'));
   }
   if (settingsNavPrivacy) {
     settingsNavPrivacy.addEventListener('click', () => switchSettingsSection('privacy'));
@@ -567,6 +623,26 @@ export function initSettings() {
 
   updateLastSeenUI();
 
+  // Исключения приватности: кнопка открытия модалки, закрытия и поиска
+  const btnOpenExceptionsModal = document.getElementById('rowOpenLastSeenExceptionsModal');
+  if (btnOpenExceptionsModal) {
+    btnOpenExceptionsModal.addEventListener('click', openLastSeenExceptionsModal);
+  }
+  const btnCloseExceptions = document.getElementById('btnCloseLastSeenExceptions');
+  if (btnCloseExceptions) {
+    btnCloseExceptions.addEventListener('click', closeLastSeenExceptionsModal);
+  }
+  const btnSaveExceptions = document.getElementById('btnSaveLastSeenExceptions');
+  if (btnSaveExceptions) {
+    btnSaveExceptions.addEventListener('click', closeLastSeenExceptionsModal);
+  }
+  const searchExceptions = document.getElementById('lastSeenExceptionsSearch');
+  if (searchExceptions) {
+    searchExceptions.addEventListener('input', (e) => {
+      renderLastSeenExceptionsList(e.target.value);
+    });
+  }
+
   // Выход из учетной записи
   if (btnLogoutSettings) {
     btnLogoutSettings.addEventListener('click', () => {
@@ -606,7 +682,9 @@ export function initSettings() {
   }
 
   window.adminUnarchive = adminUnarchive;
+  window.adminArchive = adminArchive;
   window.adminPurge = adminPurge;
+  window.adminSetTrust = adminSetTrust;
 }
 
 export function setupSettingsUI() {
@@ -616,8 +694,8 @@ export function setupSettingsUI() {
   const displayName = currentUser.display_name || currentUser.username;
   if (settingsUserDisplayName) settingsUserDisplayName.textContent = displayName;
   if (settingsUserHandle) settingsUserHandle.textContent = `@${currentUser.username}`;
-  if (settingsUserAvatar) settingsUserAvatar.textContent = (displayName || 'A').charAt(0).toUpperCase();
-  if (settingsProfileAvatar) settingsProfileAvatar.textContent = (displayName || 'A').charAt(0).toUpperCase();
+  if (settingsUserAvatar) applyAvatarToElement(settingsUserAvatar, currentUser);
+  if (settingsProfileAvatar) applyAvatarToElement(settingsProfileAvatar, currentUser);
 
   // Заполнение инпутов профиля
   if (settingsDisplayNameInput) settingsDisplayNameInput.value = currentUser.display_name || '';
@@ -1017,17 +1095,28 @@ function renderAdminUsersPage() {
     if (u.status === 'PENDING_2FA') statusBadge = `<span class="badge" style="background:#a855f722; color:#a855f7;">PENDING_2FA (24h)</span>`;
     if (u.status === 'ARCHIVED') statusBadge = `<span class="badge" style="background:#ef444422; color:#ef4444;">ARCHIVED</span>`;
 
+    const userAvatarHtml = renderAvatarHTML(u, { size: 36, fontSize: 14 });
+    const userDisplayNameHtml = renderUserDisplayNameHTML(u);
+
     row.innerHTML = `
       <div class="settings-row-left">
-        <div class="avatar" style="width:36px; height:36px; font-size:14px;">${u.username.charAt(0).toUpperCase()}</div>
+        ${userAvatarHtml}
         <div class="settings-row-info">
-          <div class="settings-row-title">${escapeHtml(u.username)} ${u.is_admin ? '<span class="badge badge-admin">ADMIN</span>' : ''}</div>
-          <div class="settings-row-desc">Траст: ${u.trust_level} | ${statusBadge}</div>
+          <div class="settings-row-title">${userDisplayNameHtml} ${u.is_admin ? '<span class="badge badge-admin">ADMIN</span>' : ''}</div>
+          <div class="settings-row-desc" style="display:flex; align-items:center; gap:8px; margin-top:2px;">
+            <span>${statusBadge}</span>
+            <select class="admin-trust-select" onchange="adminSetTrust('${u.id}', this.value)" style="background:#161618; color:#fff; border:1px solid rgba(255,255,255,0.15); border-radius:10px; padding:2px 8px; font-size:11px; cursor:pointer; font-weight:700;">
+              <option value="0" ${u.trust_level === 0 ? 'selected' : ''}>T0 · Новичок</option>
+              <option value="1" ${u.trust_level === 1 ? 'selected' : ''}>T1 · Доверенный</option>
+              <option value="2" ${u.trust_level === 2 ? 'selected' : ''}>T2 · Вечный</option>
+            </select>
+          </div>
         </div>
       </div>
-      <div class="settings-row-right">
-        ${u.is_archived ? `<button class="action-pill-btn" onclick="adminUnarchive('${u.id}')">Разархивировать</button>` : ''}
-        ${!u.is_admin ? `<button class="action-pill-btn" style="color:#ef4444;" onclick="adminPurge('${u.id}')">Уничтожить</button>` : ''}
+      <div class="settings-row-right" style="display:flex; align-items:center; gap:8px;">
+        ${!u.is_admin && !u.is_archived ? `<button class="action-pill-btn" style="color:#f59e0b; border-color:rgba(245,158,11,0.3);" onclick="adminArchive('${u.id}')">В архив</button>` : ''}
+        ${u.is_archived ? `<button class="action-pill-btn" style="color:#22c55e; border-color:rgba(34,197,94,0.3);" onclick="adminUnarchive('${u.id}')">Разархивировать</button>` : ''}
+        ${!u.is_admin ? `<button class="action-pill-btn" style="color:#ef4444; border-color:rgba(239,68,68,0.3);" onclick="adminPurge('${u.id}')">Уничтожить</button>` : ''}
       </div>
     `;
     adminUsersList.appendChild(row);
@@ -1080,6 +1169,42 @@ async function handleAdminCreateUser() {
     loadAdminData();
   } catch (e) {
     showAppDialog({ title: 'Ошибка', message: 'Ошибка сети при создании' });
+  }
+}
+
+export async function adminArchive(targetUserId) {
+  showAppDialog({
+    title: 'Архивация аккаунта',
+    message: 'Отправить эту учетную запись в архив? Пользователь будет отключен от системы и все его сессии завершатся.',
+    confirmText: 'В архив',
+    isDanger: true,
+    onConfirm: async () => {
+      await authFetch('/api/admin/action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: targetUserId, target_user_id: targetUserId, action: 'archive' })
+      });
+      loadAdminData();
+    }
+  });
+}
+
+export async function adminSetTrust(targetUserId, trustLevel) {
+  const tl = parseInt(trustLevel, 10);
+  try {
+    const res = await authFetch('/api/admin/action', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: targetUserId, target_user_id: targetUserId, action: 'set_trust', trust_level: tl })
+    });
+    if (res.ok) {
+      loadAdminData();
+    } else {
+      const err = await res.json().catch(() => ({}));
+      showAppDialog({ title: 'Ошибка', message: err.message || 'Не удалось изменить уровень доверия' });
+    }
+  } catch (e) {
+    showAppDialog({ title: 'Ошибка', message: 'Ошибка сети при смене траста' });
   }
 }
 
@@ -1175,12 +1300,13 @@ export async function loadDevicesAndSessions() {
 
     if (current) {
       const devType = detectDeviceType(current.device_info);
+      const appVer = window.SHARADA_VERSION || '1.3.1';
       if (currentIconEl) currentIconEl.innerHTML = DEVICE_ICONS[devType] || DEVICE_ICONS.windows;
       if (currentTitleEl) {
         currentTitleEl.textContent = devType.charAt(0).toUpperCase() + devType.slice(1) + ' Device';
       }
       if (currentSubtitleEl) {
-        currentSubtitleEl.textContent = 'sharada 1.0.0 desktop • онлайн';
+        currentSubtitleEl.textContent = `sharada ${appVer} desktop • онлайн`;
       }
       if (currentLocationEl) {
         const ipStr = current.ip_address ? `${current.ip_address} • ` : '';
@@ -1234,6 +1360,7 @@ export function openSessionDetailModal(sess) {
   if (!modal) return;
 
   const devType = detectDeviceType(sess.device_info);
+  const appVer = window.SHARADA_VERSION || '1.3.1';
   const iconEl = document.getElementById('sessionModalIcon');
   const nameEl = document.getElementById('sessionModalDeviceName');
   const activeEl = document.getElementById('sessionModalLastActive');
@@ -1246,7 +1373,7 @@ export function openSessionDetailModal(sess) {
   if (iconEl) iconEl.innerHTML = DEVICE_ICONS[devType] || DEVICE_ICONS.windows;
   if (nameEl) nameEl.textContent = `${devType.charAt(0).toUpperCase() + devType.slice(1)} Device`;
   if (activeEl) activeEl.textContent = sess.last_active_at ? `Был(а) в сети ${formatLastSeen(sess.last_active_at)}` : 'Онлайн';
-  if (clientEl) clientEl.textContent = `sharada 1.0.0 ${devType}`;
+  if (clientEl) clientEl.textContent = `sharada ${appVer} ${devType}`;
   if (locEl) locEl.textContent = sess.location || 'Россия, Локальная сеть';
   if (ipEl) ipEl.textContent = sess.ip_address || '127.0.0.1';
 

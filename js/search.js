@@ -4,6 +4,7 @@
 import { authFetch, escapeHtml } from './api.js';
 import { cachedChannels, openChat, createDirectChat } from './chats.js';
 import { showAppDialog } from './modals.js';
+import { renderAvatarHTML, renderUserDisplayNameHTML } from './identity.js';
 
 const searchInput = document.getElementById('searchInput');
 const chatList = document.getElementById('chatList');
@@ -61,9 +62,9 @@ export async function performSegmentedSearch(q) {
       const item = document.createElement('div');
       item.className = 'search-result-item';
       item.innerHTML = `
-        <div class="avatar">${ch.name.charAt(0).toUpperCase()}</div>
+        ${renderAvatarHTML(ch, { size: 42 })}
         <div class="search-result-info">
-          <div class="search-result-name">${escapeHtml(ch.name)} ${ch.is_e2ee ? '<span class="badge badge-e2ee">E2EE</span>' : ''}</div>
+          <div class="search-result-name">${renderUserDisplayNameHTML(ch)} ${ch.is_e2ee ? '<span class="badge badge-e2ee">E2EE</span>' : ''}</div>
           <div class="search-result-sub">${escapeHtml(ch.description || 'Чат')}</div>
         </div>
       `;
@@ -87,9 +88,9 @@ export async function performSegmentedSearch(q) {
       const item = document.createElement('div');
       item.className = 'search-result-item';
       item.innerHTML = `
-        <div class="avatar" style="background:var(--grad-blue);">${ct.name.charAt(0).toUpperCase()}</div>
+        ${renderAvatarHTML(ct, { size: 42 })}
         <div class="search-result-info">
-          <div class="search-result-name">${escapeHtml(ct.name)}</div>
+          <div class="search-result-name">${renderUserDisplayNameHTML(ct)}</div>
           <div class="search-result-sub">${escapeHtml(ct.tel || ct.email || 'Контакт')}</div>
         </div>
       `;
@@ -129,9 +130,9 @@ export async function performSegmentedSearch(q) {
           const item = document.createElement('div');
           item.className = 'search-result-item';
           item.innerHTML = `
-            <div class="avatar" style="background:var(--grad-purple);">${u.username.charAt(0).toUpperCase()}</div>
+            ${renderAvatarHTML(u, { size: 42 })}
             <div class="search-result-info">
-              <div class="search-result-name">${escapeHtml(u.username)}</div>
+              <div class="search-result-name">${renderUserDisplayNameHTML(u)}</div>
               <div class="search-result-sub">Пользователь Sharada</div>
             </div>
           `;
@@ -155,9 +156,9 @@ export async function performModalSearch(q) {
     const item = document.createElement('div');
     item.className = 'search-result-item';
     item.innerHTML = `
-      <div class="avatar" style="background:var(--grad-blue);">${ct.name.charAt(0).toUpperCase()}</div>
+      ${renderAvatarHTML(ct, { size: 42 })}
       <div class="search-result-info">
-        <div class="search-result-name">${escapeHtml(ct.name)}</div>
+        <div class="search-result-name">${renderUserDisplayNameHTML(ct)}</div>
         <div class="search-result-sub">${escapeHtml(ct.tel || 'Контакт')}</div>
       </div>
     `;
@@ -177,9 +178,9 @@ export async function performModalSearch(q) {
         const item = document.createElement('div');
         item.className = 'search-result-item';
         item.innerHTML = `
-          <div class="avatar" style="background:var(--grad-purple);">${u.username.charAt(0).toUpperCase()}</div>
+          ${renderAvatarHTML(u, { size: 42 })}
           <div class="search-result-info">
-            <div class="search-result-name">${escapeHtml(u.username)}</div>
+            <div class="search-result-name">${renderUserDisplayNameHTML(u)}</div>
             <div class="search-result-sub">Пользователь Sharada</div>
           </div>
         `;

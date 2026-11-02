@@ -3,7 +3,15 @@
  */
 import { API_BASE, setCurrentUser } from './api.js';
 import { initAuth, checkSession } from './auth.js';
-import { loadChannels, initWebSocket, initChatEvents, setSwitchToChatsCallback } from './chats.js';
+import { 
+  loadChannels, 
+  initWebSocket, 
+  initChatEvents, 
+  setSwitchToChatsCallback,
+  resetDefaultAmbientTheme,
+  applyCurrentChatWallpaper,
+  currentChannelId
+} from './chats.js';
 import { initSearch } from './search.js';
 import { initNFC } from './nfc.js';
 import { initSettings, setupSettingsUI } from './settings.js';
@@ -83,9 +91,15 @@ export function switchAppView(viewName) {
     currentActiveView = viewName;
     if (viewName === 'settings') {
       document.body.classList.remove('in-chat-mobile');
+      resetDefaultAmbientTheme();
       setupSettingsUI();
     } else if (viewName === 'chats') {
       document.body.classList.remove('in-settings-section-mobile');
+      if (currentChannelId) {
+        applyCurrentChatWallpaper(currentChannelId);
+      } else {
+        resetDefaultAmbientTheme();
+      }
       updateHeaderConnectionText();
     }
 
