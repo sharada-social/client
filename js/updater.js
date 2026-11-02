@@ -1,12 +1,13 @@
 /**
- * Sharada Messenger - GitHub Release Updater & Changelog Module
+ * Sharada Messenger - GitHub & Server-Side Release Updater Module
  */
+import { API_BASE } from './api.js';
 
 export function getCurrentVersion() {
   if (typeof window !== 'undefined' && window.SHARADA_VERSION) {
     return window.SHARADA_VERSION;
   }
-  return '1.4.0';
+  return '1.4.1';
 }
 
 const GITHUB_REPO = 'sharada-social/client';
@@ -24,45 +25,103 @@ export function isNewerVersion(latest, current) {
 }
 
 export function initUpdateChecker() {
-  // Запуск фоновой проверки без блокировки сети
+  // Запуск фоновой проверки без блокировки старта
   setTimeout(() => {
-    checkGithubUpdatesSilently();
-  }, 3000);
+    checkUpdates();
+  }, 2500);
 }
 
-async function checkGithubUpdatesSilently() {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 секунд максимум в фоне
-
+/**
+ * Получение информации о последнем релизе.
+ * Приоритет 1: собственный бэкенд Sharada (/api/updates/check) - нет лимитов rate limit, нет блокировок.
+ * Приоритет 2: прямой запрос к GitHub API (как fallback).
+ */
+async function fetchLatestReleaseInfo() {
+  // 1. Пробуем бэкенд Sharada
   try {
-    const res = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/releases/latest`, {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 6000);
+    const res = await fetch(`${API_BASE}/api/updates/check`, {
       signal: controller.signal,
-      headers: {
-        'Accept': 'application/vnd.github.v3+json'
-      }
+      headers: { 'Accept': 'application/json' }
     });
     clearTimeout(timeoutId);
 
-    if (!res.ok) return; // Если ошибка или нет релиза — молча выходим
-
-    const data = await res.json();
-    const latestVersion = (data.tag_name || data.name || '').replace(/^v/, '').trim();
-    if (!latestVersion) return;
-
-    // Проверяем, не нажал ли пользователь ранее "Пропустить версию"
-    const skipped = localStorage.getItem('sharada_skip_version');
-    if (skipped === latestVersion) return;
-
-    // Сравниваем версии
-    const curVer = getCurrentVersion();
-    if (isNewerVersion(latestVersion, curVer)) {
-      showUpdateModal(latestVersion, data);
+    if (res.ok) {
+      const data = await res.json();
+      if (data && (data.version || data.tag_name)) {
+        console.log('[Updater] Received release info from Sharada backend:', data.version || data.tag_name);
+        return data;
+      }
     }
   } catch (err) {
-    // Сеть недоступна, таймаут или гитхаб не отвечает — тихо игнорируем
-  } finally {
-    clearTimeout(timeoutId);
+    console.warn('[Updater] Sharada backend check unavailable, trying GitHub directly...', err.message);
   }
+
+  // 2. Fallback: прямой запрос к GitHub Releases API
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
+    const res = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/releases/latest`, {
+      signal: controller.signal,
+      headers: { 'Accept': 'application/vnd.github.v3+json' }
+    });
+    clearTimeout(timeoutId);
+
+    if (res.ok) {
+      const data = await res.json();
+      console.log('[Updater] Received release info from GitHub API directly:', data.tag_name);
+      return data;
+    } else {
+      console.warn(`[Updater] GitHub API returned status ${res.status}`);
+    }
+  } catch (err) {
+    console.warn('[Updater] GitHub direct check failed:', err.message);
+  }
+
+  return null;
+}
+
+export async function checkUpdates(isManual = false) {
+  const curVer = getCurrentVersion();
+  console.log(`[Updater] Checking updates... Current client version: v${curVer}`);
+
+  const releaseData = await fetchLatestReleaseInfo();
+  if (!releaseData) {
+    if (isManual) {
+      alert(`Не удалось связаться с сервером обновлений. Текущая версия: v${curVer}`);
+    }
+    return;
+  }
+
+  const latestVersion = (releaseData.version || releaseData.tag_name || releaseData.name || '').replace(/^v/, '').trim();
+  if (!latestVersion) return;
+
+  console.log(`[Updater] Latest available version: v${latestVersion}`);
+
+  // Проверяем, не нажал ли пользователь "Пропустить версию" (только для авто-проверки)
+  if (!isManual) {
+    const skipped = localStorage.getItem('sharada_skip_version');
+    if (skipped === latestVersion) {
+      console.log(`[Updater] Version v${latestVersion} was marked as skipped by user.`);
+      return;
+    }
+  }
+
+  if (isNewerVersion(latestVersion, curVer)) {
+    console.log(`[Updater] New version detected: v${curVer} -> v${latestVersion}. Showing modal.`);
+    showUpdateModal(latestVersion, releaseData);
+  } else {
+    console.log(`[Updater] Client is up to date (v${curVer} >= v${latestVersion}).`);
+    if (isManual) {
+      alert(`У вас установлена актуальная версия Sharada (v${curVer}).`);
+    }
+  }
+}
+
+// Экспорт в глобальную область видимости для удобной проверки из консоли / настроек
+if (typeof window !== 'undefined') {
+  window.checkAppUpdates = () => checkUpdates(true);
 }
 
 function showUpdateModal(latestVersion, releaseData) {
@@ -79,7 +138,7 @@ function showUpdateModal(latestVersion, releaseData) {
   }
 
   if (changelog) {
-    let body = releaseData.body || 'Улучшения стабильности и новые функции мессенджера sharada.';
+    let body = releaseData.body || 'Новые функции, улучшение стабильности и дизайна Sharada.';
     if (body.length > 900) {
       body = body.substring(0, 900) + '\n... (полный список на GitHub)';
     }
@@ -154,7 +213,12 @@ function handleApplyUpdate(releaseData) {
   }
 
   if (isTauri) {
-    window.location.reload();
+    // В десктопном Tauri открываем страницу релиза или перезагружаем
+    if (releaseData.html_url) {
+      window.open(releaseData.html_url, '_blank');
+    } else {
+      window.location.reload();
+    }
   } else {
     if (releaseData.html_url) {
       window.open(releaseData.html_url, '_blank');
