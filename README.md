@@ -6,8 +6,8 @@ a russian closed social network for true sigmas, welcome to the our party!
 
 [![Downloads](https://img.shields.io/badge/Downloads-Releases-red?style=flat
 )](https://github.com/sharada-social/client/releases/tag/v1.4.2)
-[![Become](https://img.shields.io/badge/Create_an_account-Form-red?style=flat
-)](https://github.com/sharada-social/client/releases/tag/v1.4.2)
+<!-- [![Become](https://img.shields.io/badge/Create_an_account-Form-red?style=flat
+)](https://github.com/sharada-social/client/releases/tag/v1.4.2) -->
 
 </div>
 
