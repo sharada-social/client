@@ -225,12 +225,24 @@ export function showLoginStage(stepNum) {
   }
 }
 
+function clearSensitiveCredentials() {
+  pendingPassword = '';
+  pendingUsername = '';
+  tempSessionToken = '';
+  try {
+    delete window._pendingPass;
+    delete window._pendingUser;
+  } catch (e) {}
+  if (loginPassword) loginPassword.value = '';
+}
+
 export function handleBackToStep1(e) {
   if (e && e.preventDefault) {
     e.preventDefault();
     e.stopPropagation();
   }
   clearAuthError();
+  clearSensitiveCredentials();
   if (loginTotpCode) loginTotpCode.value = '';
   if (setupTotpInput) setupTotpInput.value = '';
   document.querySelectorAll('.totp-digit-box').forEach(b => b.value = '');
@@ -265,7 +277,8 @@ export async function handleStep1(e) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-Device-ID': getDeviceId()
+        'X-Device-ID': getDeviceId(),
+        'X-Client-Version': (typeof window !== 'undefined' && window.SHARADA_VERSION) ? window.SHARADA_VERSION : '1.4.3'
       },
       body: JSON.stringify({ username, password })
     });
@@ -283,8 +296,6 @@ export async function handleStep1(e) {
 
     pendingUsername = username;
     pendingPassword = password;
-    window._pendingUser = username;
-    window._pendingPass = password;
     tempSessionToken = data.temp_session_token || data.token || '';
 
     // Очищаем ячейки TOTP перед показом
@@ -300,6 +311,7 @@ export async function handleStep1(e) {
     } else if (data.token) {
       setAuthToken(data.token);
       setCurrentUser(data.user);
+      clearSensitiveCredentials();
       document.body.classList.remove('auth-mode');
       if (authBackdrop) authBackdrop.classList.add('hidden');
       if (onAuthSuccessCallback) onAuthSuccessCallback(data.user);
@@ -329,8 +341,8 @@ export async function handleStep2TOTP(e) {
     return false;
   }
 
-  const u = pendingUsername || window._pendingUser || (loginUsername ? loginUsername.value.trim() : '');
-  const p = pendingPassword || window._pendingPass || (loginPassword ? loginPassword.value.trim() : '');
+  const u = pendingUsername || (loginUsername ? loginUsername.value.trim() : '');
+  const p = pendingPassword || (loginPassword ? loginPassword.value.trim() : '');
 
   const btn = document.getElementById('btnStep2Login');
   if (btn) {
@@ -343,7 +355,8 @@ export async function handleStep2TOTP(e) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-Device-ID': getDeviceId()
+        'X-Device-ID': getDeviceId(),
+        'X-Client-Version': (typeof window !== 'undefined' && window.SHARADA_VERSION) ? window.SHARADA_VERSION : '1.4.3'
       },
       body: JSON.stringify({
         username: u,
@@ -366,6 +379,7 @@ export async function handleStep2TOTP(e) {
     // Успешный вход в систему!
     setAuthToken(data.token);
     setCurrentUser(data.user);
+    clearSensitiveCredentials();
     document.body.classList.remove('auth-mode');
     if (authBackdrop) authBackdrop.classList.add('hidden');
 
@@ -403,8 +417,8 @@ export async function handleSetup2FAConfirm(e) {
     return false;
   }
 
-  const u = pendingUsername || window._pendingUser || (loginUsername ? loginUsername.value.trim() : '');
-  const p = pendingPassword || window._pendingPass || (loginPassword ? loginPassword.value.trim() : '');
+  const u = pendingUsername || (loginUsername ? loginUsername.value.trim() : '');
+  const p = pendingPassword || (loginPassword ? loginPassword.value.trim() : '');
 
   const btn = document.getElementById('btnConfirm2FASetup');
   if (btn) {
@@ -415,7 +429,8 @@ export async function handleSetup2FAConfirm(e) {
   try {
     const headers = {
       'Content-Type': 'application/json',
-      'X-Device-ID': getDeviceId()
+      'X-Device-ID': getDeviceId(),
+      'X-Client-Version': (typeof window !== 'undefined' && window.SHARADA_VERSION) ? window.SHARADA_VERSION : '1.4.3'
     };
     if (tempSessionToken) {
       headers['Authorization'] = `Bearer ${tempSessionToken}`;
@@ -440,7 +455,8 @@ export async function handleSetup2FAConfirm(e) {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-Device-ID': getDeviceId()
+          'X-Device-ID': getDeviceId(),
+          'X-Client-Version': (typeof window !== 'undefined' && window.SHARADA_VERSION) ? window.SHARADA_VERSION : '1.4.3'
         },
         body: JSON.stringify({
           username: u,
@@ -466,6 +482,7 @@ export async function handleSetup2FAConfirm(e) {
 
     setAuthToken(data.token);
     setCurrentUser(data.user);
+    clearSensitiveCredentials();
     document.body.classList.remove('auth-mode');
     if (authBackdrop) authBackdrop.classList.add('hidden');
 

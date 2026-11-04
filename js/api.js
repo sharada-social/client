@@ -75,10 +75,22 @@ export async function authFetch(endpoint, options = {}) {
     headers['Authorization'] = `Bearer ${token}`;
   }
   headers['X-Device-ID'] = getDeviceId();
+  headers['X-Client-Version'] = (typeof window !== 'undefined' && window.SHARADA_VERSION) ? window.SHARADA_VERSION : '1.4.3';
   options.headers = headers;
 
   const url = endpoint.startsWith('http') ? endpoint : `${API_BASE}${endpoint}`;
   const res = await fetch(url, options);
+
+  // Если сервер вернул 426 (требуется обязательное обновление безопасности)
+  if (res.status === 426) {
+    console.warn('[Version] Server requires client upgrade (HTTP 426)');
+    try {
+      const data = await res.clone().json();
+      if (typeof window !== 'undefined' && typeof window.checkAppUpdates === 'function') {
+        window.checkAppUpdates(true);
+      }
+    } catch (e) {}
+  }
 
   // Если сервер вернул 401 (сессия отозвана с другого устройства)
   if (res.status === 401 && token) {

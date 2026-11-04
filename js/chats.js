@@ -1262,6 +1262,40 @@ export function createMessageElement(msg, index = 0) {
         }
       });
     }
+  // Отображение требования обязательного обновления безопасности в чате
+  if (msg.content && (String(msg.content).includes('Пожалуйста, обновите свой клиент sharada') || String(msg.content).startsWith('[UPDATE_REQUIRED:'))) {
+    const timeStr = new Date(msg.created_at || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const card = document.createElement('div');
+    if (domId) card.id = domId;
+    card.className = 'call-event-card call-missed update-alert-card';
+    card.dataset.dateKey = mDateKey;
+    if (typeof index === 'number' && index > 0) {
+      card.style.animationDelay = `${Math.min(index * 25, 300)}ms`;
+    }
+    card.innerHTML = `
+      <div class="call-event-icon" style="background: rgba(239, 68, 68, 0.2); color: #ef4444;">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+          <path d="M12 2L1 21h22L12 2zm0 3.99L19.53 19H4.47L12 5.99zM11 10h2v4h-2zm0 6h2v2h-2z"/>
+        </svg>
+      </div>
+      <div class="call-event-info">
+        <div class="call-event-title" style="color: #ef4444; font-weight: 700;">Критическое обновление безопасности</div>
+        <div class="call-event-subtitle" style="white-space: pre-wrap; margin-top: 4px;">Пожалуйста, обновите свой клиент sharada, в обновлении исправлены критические проблемы безопасности. Версии 1.4.2 и ниже заблокированы. • ${timeStr}</div>
+      </div>
+      <button type="button" class="call-event-callback-btn btn-trigger-app-update" style="background: #ef4444; color: #fff; font-weight: 700;">Обновить</button>
+    `;
+
+    const btnUpdate = card.querySelector('.btn-trigger-app-update');
+    if (btnUpdate) {
+      btnUpdate.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (typeof window.checkAppUpdates === 'function') {
+          window.checkAppUpdates(true);
+        } else {
+          window.open('https://github.com/sharada-social/client/releases/latest', '_blank');
+        }
+      });
+    }
     return card;
   }
 
@@ -1970,7 +2004,8 @@ export function initWebSocket() {
 
   clearTimeout(wsReconnectTimer);
 
-  const wsUrl = `${WS_BASE}/ws?token=${token}`;
+  const clientVer = (typeof window !== 'undefined' && window.SHARADA_VERSION) ? window.SHARADA_VERSION : '1.4.3';
+  const wsUrl = `${WS_BASE}/ws?token=${token}&v=${clientVer}`;
 
   setConnectionState('connecting');
   wsConn = new WebSocket(wsUrl);

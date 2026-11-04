@@ -175,6 +175,14 @@ export function getAvatarInfo(entity) {
   };
 }
 
+function sanitizeAvatarUrl(url) {
+  const raw = String(url || '').trim();
+  if (raw.startsWith('https://') || raw.startsWith('data:image/') || raw.startsWith('assets/')) {
+    return escapeHtml(raw);
+  }
+  return 'assets/icons/avatar/user/cat.svg';
+}
+
 /**
  * Генерирует HTML-разметку для аватара
  */
@@ -188,14 +196,14 @@ export function renderAvatarHTML(entity, options = {}) {
 
   let contentHtml = '';
   if (info.type === 'special_img' || info.type === 'img') {
-    contentHtml = `<img src="${info.imgUrl}" class="chat-avatar-full-img" alt="" draggable="false">`;
+    contentHtml = `<img src="${sanitizeAvatarUrl(info.imgUrl)}" class="chat-avatar-full-img" alt="" draggable="false">`;
   } else if (info.type === 'special_svg') {
-    contentHtml = `<img src="${info.iconPath}" class="chat-avatar-svg-icon" alt="" draggable="false">`;
+    contentHtml = `<img src="${escapeHtml(info.iconPath)}" class="chat-avatar-svg-icon" alt="" draggable="false">`;
   } else if (info.type === 'group') {
     contentHtml = `<span class="avatar-letter">${escapeHtml(info.letter || '#')}</span>`;
   } else {
     // Пользовательский значок в белом цвете
-    contentHtml = `<img src="${info.iconPath}" class="avatar-user-icon" alt="" draggable="false">`;
+    contentHtml = `<img src="${escapeHtml(info.iconPath)}" class="avatar-user-icon" alt="" draggable="false">`;
   }
 
   let dotHtml = '';
@@ -234,13 +242,13 @@ export function applyAvatarToElement(element, entity, options = {}) {
 
   let contentHtml = '';
   if (info.type === 'special_img' || info.type === 'img') {
-    contentHtml = `<img src="${info.imgUrl}" class="chat-avatar-full-img" alt="" draggable="false">`;
+    contentHtml = `<img src="${sanitizeAvatarUrl(info.imgUrl)}" class="chat-avatar-full-img" alt="" draggable="false">`;
   } else if (info.type === 'special_svg') {
-    contentHtml = `<img src="${info.iconPath}" class="header-avatar-svg-icon" alt="" draggable="false">`;
+    contentHtml = `<img src="${escapeHtml(info.iconPath)}" class="header-avatar-svg-icon" alt="" draggable="false">`;
   } else if (info.type === 'group') {
     contentHtml = `<span class="avatar-letter">${escapeHtml(info.letter || '#')}</span>`;
   } else {
-    contentHtml = `<img src="${info.iconPath}" class="avatar-user-icon" alt="" draggable="false">`;
+    contentHtml = `<img src="${escapeHtml(info.iconPath)}" class="avatar-user-icon" alt="" draggable="false">`;
   }
 
   if (options.showOnlineDot) {

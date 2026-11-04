@@ -1,6 +1,6 @@
 [package]
 name = "sharada"
-version = "1.4.2"
+version = "1.4.3"
 description = "Sharada Secure Messenger"
 authors = ["Sharada Security Team"]
 license = ""

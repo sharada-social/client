@@ -7,7 +7,7 @@ export function getCurrentVersion() {
   if (typeof window !== 'undefined' && window.SHARADA_VERSION) {
     return window.SHARADA_VERSION;
   }
-  return '1.4.2';
+  return '1.4.3';
 }
 
 const GITHUB_REPO = 'sharada-social/client';
@@ -99,8 +99,9 @@ export async function checkUpdates(isManual = false) {
 
   console.log(`[Updater] Latest available version: v${latestVersion}`);
 
-  // Проверяем, не нажал ли пользователь "Пропустить версию" (только для авто-проверки)
-  if (!isManual) {
+  // Проверяем, не нажал ли пользователь "Пропустить версию" (только для необязательных обновлений)
+  const isMandatory = !!releaseData.mandatory || isNewerVersion(releaseData.min_supported_version || '0.0.0', curVer);
+  if (!isManual && !isMandatory) {
     const skipped = localStorage.getItem('sharada_skip_version');
     if (skipped === latestVersion) {
       console.log(`[Updater] Version v${latestVersion} was marked as skipped by user.`);
@@ -110,7 +111,7 @@ export async function checkUpdates(isManual = false) {
 
   if (isNewerVersion(latestVersion, curVer)) {
     console.log(`[Updater] New version detected: v${curVer} -> v${latestVersion}. Showing modal.`);
-    showUpdateModal(latestVersion, releaseData);
+    showUpdateModal(latestVersion, releaseData, isMandatory);
   } else {
     console.log(`[Updater] Client is up to date (v${curVer} >= v${latestVersion}).`);
     if (isManual) {
@@ -124,7 +125,7 @@ if (typeof window !== 'undefined') {
   window.checkAppUpdates = () => checkUpdates(true);
 }
 
-function showUpdateModal(latestVersion, releaseData) {
+function showUpdateModal(latestVersion, releaseData, isMandatory = false) {
   const modal = document.getElementById('modalAppUpdate');
   const subTitle = document.getElementById('updateVersionSubtitle');
   const changelog = document.getElementById('updateChangelogContent');
@@ -146,14 +147,20 @@ function showUpdateModal(latestVersion, releaseData) {
   }
 
   if (btnSkip) {
-    btnSkip.onclick = (e) => {
-      e.preventDefault();
-      localStorage.setItem('sharada_skip_version', latestVersion);
-      modal.classList.add('hidden');
-    };
+    if (isMandatory) {
+      btnSkip.style.display = 'none'; // Обязательное обновление безопасности нельзя пропустить
+    } else {
+      btnSkip.style.display = 'inline-block';
+      btnSkip.onclick = (e) => {
+        e.preventDefault();
+        localStorage.setItem('sharada_skip_version', latestVersion);
+        modal.classList.add('hidden');
+      };
+    }
   }
 
   if (btnDownload) {
+    btnDownload.textContent = isMandatory ? 'Обновить сейчас (Критично)' : 'Скачать обновление';
     btnDownload.onclick = () => {
       modal.classList.add('hidden');
       startUpdateDownloadAnimation(latestVersion, releaseData);
