@@ -1,4 +1,4 @@
-import { API_BASE, getAuthToken, setAuthToken, getCurrentUser, setCurrentUser, authFetch, getDeviceId } from './api.js';
+import { API_BASE, API_VERSION, getAuthToken, setAuthToken, getCurrentUser, setCurrentUser, authFetch, getDeviceId, getClientMetadata } from './api.js';
 
 const authBackdrop = document.getElementById('authBackdrop');
 const authCard = document.getElementById('authCard');
@@ -278,9 +278,13 @@ export async function handleStep1(e) {
       headers: {
         'Content-Type': 'application/json',
         'X-Device-ID': getDeviceId(),
-        'X-Client-Version': (typeof window !== 'undefined' && window.SHARADA_VERSION) ? window.SHARADA_VERSION : '1.4.3'
+        'X-Api-Version': String(API_VERSION)
       },
-      body: JSON.stringify({ username, password })
+      body: JSON.stringify({
+        username,
+        password,
+        client: getClientMetadata()
+      })
     });
 
     const data = await res.json();
@@ -356,12 +360,13 @@ export async function handleStep2TOTP(e) {
       headers: {
         'Content-Type': 'application/json',
         'X-Device-ID': getDeviceId(),
-        'X-Client-Version': (typeof window !== 'undefined' && window.SHARADA_VERSION) ? window.SHARADA_VERSION : '1.4.3'
+        'X-Api-Version': String(API_VERSION)
       },
       body: JSON.stringify({
         username: u,
         password: p,
-        totp_code: code
+        totp_code: code,
+        client: getClientMetadata()
       })
     });
 
@@ -430,7 +435,7 @@ export async function handleSetup2FAConfirm(e) {
     const headers = {
       'Content-Type': 'application/json',
       'X-Device-ID': getDeviceId(),
-      'X-Client-Version': (typeof window !== 'undefined' && window.SHARADA_VERSION) ? window.SHARADA_VERSION : '1.4.3'
+      'X-Api-Version': String(API_VERSION)
     };
     if (tempSessionToken) {
       headers['Authorization'] = `Bearer ${tempSessionToken}`;
@@ -443,7 +448,8 @@ export async function handleSetup2FAConfirm(e) {
         username: u,
         password: p,
         code: code,
-        totp_code: code
+        totp_code: code,
+        client: getClientMetadata()
       })
     });
 
@@ -456,12 +462,13 @@ export async function handleSetup2FAConfirm(e) {
         headers: {
           'Content-Type': 'application/json',
           'X-Device-ID': getDeviceId(),
-          'X-Client-Version': (typeof window !== 'undefined' && window.SHARADA_VERSION) ? window.SHARADA_VERSION : '1.4.3'
+          'X-Api-Version': String(API_VERSION)
         },
         body: JSON.stringify({
           username: u,
           password: p,
-          totp_code: code
+          totp_code: code,
+          client: getClientMetadata()
         })
       });
       if (loginRes.ok) {

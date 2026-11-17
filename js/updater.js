@@ -7,7 +7,7 @@ export function getCurrentVersion() {
   if (typeof window !== 'undefined' && window.SHARADA_VERSION) {
     return window.SHARADA_VERSION;
   }
-  return '1.4.4';
+  return '2.0.0';
 }
 
 const GITHUB_REPO = 'sharada-social/client';

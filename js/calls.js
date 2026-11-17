@@ -237,12 +237,9 @@ function setupVoiceMeter(stream, onLevel) {
 // ИНИЦИАЛИЗАЦИЯ И СТАРТ ЗВОНКА
 // ==========================================================
 export async function startVoiceCall(channel) {
-  if (!channel) return;
-  if (currentCall) {
-    // Если звонок уже активен, открываем окно звонка
-    showActiveCallOverlay();
-    return;
-  }
+  alert('Голосовые звонки временно отключены для модернизации сетевой инфраструктуры.');
+  return;
+}
 
   const currentUser = getCurrentUser();
   if (!currentUser) return;
@@ -391,15 +388,11 @@ function handleCallStateUpdate(msg) {
 // Пришел входящий звонок от собеседника
 function handleIncomingOffer(msg) {
   const payload = msg.payload || {};
-  const callerName = payload.caller_name || msg.sender_name || 'Пользователь';
   const callerId = payload.caller_id || msg.sender_id;
   const channelId = msg.channel_id || payload.channel_id;
-
-  // Если уже в звонке -> отвечаем занято
-  if (currentCall) {
-    sendCallEvent('call_busy', callerId, channelId, { reason: 'busy' });
-    return;
-  }
+  sendCallEvent('call_reject', callerId, channelId, { reason: 'calls_disabled' });
+  return;
+}
 
   // Проверяем настройку сессии allow_calls
   try {

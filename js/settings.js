@@ -1299,14 +1299,17 @@ export async function loadDevicesAndSessions() {
     const currentLocationEl = document.getElementById('currentDeviceLocation');
 
     if (current) {
-      const devType = detectDeviceType(current.device_info);
-      const appVer = window.SHARADA_VERSION || '1.3.1';
+      const cInfo = current.client || {};
+      const devType = cInfo.platform || detectDeviceType(current.device_info);
+      const devName = cInfo.device_name || (devType.charAt(0).toUpperCase() + devType.slice(1) + ' Device');
+      const cName = cInfo.name || 'Sharada Web';
+      const cVer = cInfo.version || (window.SHARADA_VERSION || '2.0.0');
       if (currentIconEl) currentIconEl.innerHTML = DEVICE_ICONS[devType] || DEVICE_ICONS.windows;
       if (currentTitleEl) {
-        currentTitleEl.textContent = devType.charAt(0).toUpperCase() + devType.slice(1) + ' Device';
+        currentTitleEl.textContent = devName;
       }
       if (currentSubtitleEl) {
-        currentSubtitleEl.textContent = `sharada ${appVer} desktop • онлайн`;
+        currentSubtitleEl.textContent = `${cName} v${cVer} • онлайн`;
       }
       if (currentLocationEl) {
         const ipStr = current.ip_address ? `${current.ip_address} • ` : '';
@@ -1322,7 +1325,11 @@ export async function loadDevicesAndSessions() {
       } else {
         activeListEl.innerHTML = '';
         activeSessions.forEach(sess => {
-          const devType = detectDeviceType(sess.device_info);
+          const cInfo = sess.client || {};
+          const devType = cInfo.platform || detectDeviceType(sess.device_info);
+          const devName = cInfo.device_name || (devType.charAt(0).toUpperCase() + devType.slice(1) + ' Device');
+          const cName = cInfo.name || 'Sharada';
+          const cVer = cInfo.version ? ` v${cInfo.version}` : '';
           const row = document.createElement('div');
           row.className = 'session-item-row';
           const lastActiveStr = sess.last_active_at ? formatLastSeen(sess.last_active_at) : 'недавно';
@@ -1335,10 +1342,10 @@ export async function loadDevicesAndSessions() {
               </div>
               <div>
                 <div style="font-weight:700; font-size:15px; color:#fff;">
-                  ${devType.charAt(0).toUpperCase() + devType.slice(1)} Device
+                  ${escapeHtml(devName)}
                 </div>
                 <div style="font-size:13px; color:var(--text-muted); margin-top:2px;">
-                  ${sessIpStr}${sess.location || 'Локальная сеть'} • ${lastActiveStr}
+                  ${escapeHtml(cName)}${escapeHtml(cVer)} • ${sessIpStr}${escapeHtml(sess.location || 'Локальная сеть')} • ${lastActiveStr}
                 </div>
               </div>
             </div>
@@ -1359,8 +1366,12 @@ export function openSessionDetailModal(sess) {
   const modal = document.getElementById('sessionDetailModal');
   if (!modal) return;
 
-  const devType = detectDeviceType(sess.device_info);
-  const appVer = window.SHARADA_VERSION || '1.3.1';
+  const cInfo = sess.client || {};
+  const devType = cInfo.platform || detectDeviceType(sess.device_info);
+  const devName = cInfo.device_name || `${devType.charAt(0).toUpperCase() + devType.slice(1)} Device`;
+  const cName = cInfo.name || 'Sharada';
+  const cVer = cInfo.version || (window.SHARADA_VERSION || '2.0.0');
+
   const iconEl = document.getElementById('sessionModalIcon');
   const nameEl = document.getElementById('sessionModalDeviceName');
   const activeEl = document.getElementById('sessionModalLastActive');
@@ -1371,14 +1382,17 @@ export function openSessionDetailModal(sess) {
   const toggleCalls = document.getElementById('toggleSessionCalls');
 
   if (iconEl) iconEl.innerHTML = DEVICE_ICONS[devType] || DEVICE_ICONS.windows;
-  if (nameEl) nameEl.textContent = `${devType.charAt(0).toUpperCase() + devType.slice(1)} Device`;
+  if (nameEl) nameEl.textContent = devName;
   if (activeEl) activeEl.textContent = sess.last_active_at ? `Был(а) в сети ${formatLastSeen(sess.last_active_at)}` : 'Онлайн';
-  if (clientEl) clientEl.textContent = `sharada ${appVer} ${devType}`;
+  if (clientEl) clientEl.textContent = `${cName} ${cVer} (${devType})`;
   if (locEl) locEl.textContent = sess.location || 'Россия, Локальная сеть';
   if (ipEl) ipEl.textContent = sess.ip_address || '127.0.0.1';
 
-  if (toggleE2EE) toggleE2EE.checked = (sess.allow_e2ee !== false);
-  if (toggleCalls) toggleCalls.checked = (sess.allow_calls !== false);
+  // Прячем переключатели E2EE и звонков (так как они отключены)
+  const e2eeContainer = toggleE2EE ? toggleE2EE.closest('.session-settings-row') : null;
+  if (e2eeContainer) e2eeContainer.style.display = 'none';
+  const callsContainer = toggleCalls ? toggleCalls.closest('.session-settings-row') : null;
+  if (callsContainer) callsContainer.style.display = 'none';
 
   modal.classList.add('active');
 }

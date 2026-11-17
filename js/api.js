@@ -68,31 +68,70 @@ export function setCurrentUser(user) {
   }
 }
 
+export const API_VERSION = 2;
+
+export function detectPlatform() {
+  if (typeof navigator === 'undefined') return 'other';
+  const ua = navigator.userAgent || '';
+  if (/android/i.test(ua)) return 'android';
+  if (/iphone|ipad|ipod/i.test(ua)) return 'ios';
+  if (/windows/i.test(ua)) return 'windows';
+  if (/macintosh|mac os x/i.test(ua)) return 'macos';
+  if (/linux/i.test(ua)) return 'linux';
+  return 'other';
+}
+
+export function getFriendlyDeviceName() {
+  if (typeof navigator === 'undefined') return 'Web Browser';
+  const ua = navigator.userAgent || '';
+  if (/windows/i.test(ua)) return 'Windows PC';
+  if (/macintosh/i.test(ua)) return 'MacBook / Mac';
+  if (/iphone/i.test(ua)) return 'iPhone';
+  if (/ipad/i.test(ua)) return 'iPad';
+  if (/android/i.test(ua)) return 'Android Device';
+  if (/linux/i.test(ua)) return 'Linux Device';
+  return 'Web Browser';
+}
+
+export function getClientMetadata() {
+  const ver = (typeof window !== 'undefined' && window.SHARADA_VERSION) ? window.SHARADA_VERSION : '2.0.0';
+  return {
+    name: 'Sharada Web',
+    version: ver,
+    device_name: getFriendlyDeviceName(),
+    platform: detectPlatform()
+  };
+}
+
 export async function authFetch(endpoint, options = {}) {
   const headers = options.headers || {};
   const token = getAuthToken();
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
-  headers['X-Device-ID'] = getDeviceId();
-  headers['X-Client-Version'] = (typeof window !== 'undefined' && window.SHARADA_VERSION) ? window.SHARADA_VERSION : '1.4.3';
+  // Передаем версию протокола API (целое число) во всех запросах кроме публичных метаданных
+  if (!endpoint.includes('/api/meta') && !endpoint.includes('/api/updates/check')) {
+    headers['X-Api-Version'] = String(API_VERSION);
+  }
   options.headers = headers;
 
   const url = endpoint.startsWith('http') ? endpoint : `${API_BASE}${endpoint}`;
   const res = await fetch(url, options);
 
-  // Если сервер вернул 426 (требуется обязательное обновление безопасности)
-  if (res.status === 426) {
-    console.warn('[Version] Server requires client upgrade (HTTP 426)');
+  // Если сервер вернул 426 (требуется обновление API протокола) или 400 (слишком новая версия)
+  if (res.status === 426 || (res.status === 400 && endpoint.startsWith('/api/'))) {
     try {
       const data = await res.clone().json();
-      if (typeof window !== 'undefined' && typeof window.checkAppUpdates === 'function') {
-        window.checkAppUpdates(true);
+      if (data && (data.code === 'api_version_unsupported' || data.code === 'api_version_too_new')) {
+        console.warn(`[Version] API protocol version error (${data.code}):`, data.message);
+        if (typeof window !== 'undefined' && typeof window.checkAppUpdates === 'function') {
+          window.checkAppUpdates(true);
+        }
       }
     } catch (e) {}
   }
 
-  // Если сервер вернул 401 (сессия отозвана с другого устройства)
+  // Если сервер вернул 401 (сессия отозвана)
   if (res.status === 401 && token) {
     console.warn('[Auth] Session invalidated by server');
     setAuthToken(null);

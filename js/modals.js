@@ -32,7 +32,7 @@ export function showAppDialog(titleOrOptions, messageText, confirmText = 'ОК',
   }
 
   if (confirmModalTitle) confirmModalTitle.textContent = title;
-  if (confirmModalDesc) confirmModalDesc.innerHTML = message;
+  if (confirmModalDesc) confirmModalDesc.textContent = message;
   if (btnConfirmModalAction) {
     btnConfirmModalAction.textContent = confirmText;
     btnConfirmModalAction.className = isDanger ? 'btn-danger' : 'btn-primary';

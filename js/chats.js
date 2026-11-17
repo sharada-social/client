@@ -1256,12 +1256,12 @@ export function createMessageElement(msg, index = 0) {
     if (btnCallback) {
       btnCallback.addEventListener('click', (e) => {
         e.stopPropagation();
-        const currentChan = cachedChannels.find(c => c.id === currentChannelId);
-        if (currentChan) {
-          startVoiceCall(currentChan);
-        }
+        alert('Голосовые звонки временно отключены.');
       });
     }
+    return card;
+  }
+
   // Отображение требования обязательного обновления безопасности в чате
   if (msg.content && (String(msg.content).includes('Пожалуйста, обновите свой клиент sharada') || String(msg.content).startsWith('[UPDATE_REQUIRED:'))) {
     const timeStr = new Date(msg.created_at || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -2004,11 +2004,14 @@ export function initWebSocket() {
 
   clearTimeout(wsReconnectTimer);
 
-  const clientVer = (typeof window !== 'undefined' && window.SHARADA_VERSION) ? window.SHARADA_VERSION : '1.4.3';
-  const wsUrl = `${WS_BASE}/ws?token=${token}&v=${clientVer}`;
-
+  // Передаем токен через Sec-WebSocket-Protocol для защиты от утечки в query string и логах
+  const wsUrl = `${WS_BASE}/ws`;
   setConnectionState('connecting');
-  wsConn = new WebSocket(wsUrl);
+  try {
+    wsConn = new WebSocket(wsUrl, [token]);
+  } catch (err) {
+    wsConn = new WebSocket(`${wsUrl}?token=${encodeURIComponent(token)}`);
+  }
 
   setCallWsSender((type, targetId, channelId, payload) => {
     if (wsConn && wsConn.readyState === WebSocket.OPEN) {
@@ -2128,7 +2131,22 @@ export function initWebSocket() {
     }
   };
 
-  wsConn.onclose = () => {
+  let isVersionBlocked = false;
+
+  wsConn.onclose = (event) => {
+    // Код 4426: блокировка по версии протокола API (api_version_unsupported или api_version_too_new)
+    if (event && event.code === 4426) {
+      console.error(`[WS] Connection closed with application code 4426 (${event.reason || 'version mismatch'})`);
+      isVersionBlocked = true;
+      setConnectionState('offline');
+      if (typeof window !== 'undefined' && typeof window.checkAppUpdates === 'function') {
+        window.checkAppUpdates(true);
+      }
+      return;
+    }
+
+    if (isVersionBlocked) return;
+
     setConnectionState('reconnecting');
     onlineUsers.clear();
     updateOnlineStatusUI();
